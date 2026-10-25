@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from unittest.mock import patch
 
 from test_novel_state import WorkspaceFixture, ns
 
@@ -174,7 +175,8 @@ class NarrativeQualityTests(QualityFixture):
         for n in range(2, 7): self.release(n)
         state = ns.load_state(self.root)
         result = self.q.search_history(self.root, state, "借据 逼退", 5, 4, self.a)
-        self.assertEqual(result["scanned_records"], 6)
+        self.assertEqual(result["indexed_records"], 6)
+        self.assertEqual(result["scanned_records"], 3)
         self.assertEqual([x["chapter"] for x in result["candidates"]], [1])
         self.assertIn("不是语义去重", result["note"])
 
@@ -269,3 +271,60 @@ class NarrativeQualityTests(QualityFixture):
     def test_profile_configuration_rejects_silent_nonserial_or_string_flags(self):
         for cfg in ({"serial_mode": False, "narrative_review_required": True}, {"serial_mode": True, "narrative_review_required": "true"}):
             with self.assertRaises(ns.WorkspaceError): ns.init(Path(self.temp.name) / "bad", "错误配置测试", cfg)
+
+    def test_empty_older_reader_recap_falls_back_to_actual_prose(self):
+        old_text = "甲把唯一的铜钥匙交给乙，自己留在无门的院外。"
+        path, recpath, _, report = self.prepare(1, old_text)
+        report["narrative_review"]["reader_updates"] = []
+        report["narrative_review"]["reader_update_note"] = "合成用例故意不生成回顾，后续须保留正文。"
+        self.gate(path, recpath, report); ns.adopt(self.root, path, recpath)
+        for n in range(2, 5): self.release(n)
+        body, coverage = self.q.reader_packet(self.root, ns.load_state(self.root), "新的合成候选。", self.a)
+        self.assertIn(old_text, body)
+        self.assertEqual(coverage["1"]["mode"], "full_text")
+
+    def test_context_rejects_changes_during_initial_file_verification(self):
+        self.register_brief()
+        draft = Path(self.temp.name) / "next.txt"; draft.write_text(TEXT, encoding="utf-8")
+        initial = copy.deepcopy(ns.load_state(self.root))
+        verify = ns.verify_files
+        for profile in ("author", "writer", "reader"):
+            for field in ("revision", "title"):
+                with self.subTest(profile=profile, changed_field=field):
+                    ns.atomic_json(self.root / "state.json", initial)
+                    def change_after_loading(root, state):
+                        verify(root, state)
+                        current = ns.load_state(root)
+                        current[field] = current[field] + 1 if field == "revision" else "另一个合成标题"
+                        ns.atomic_json(Path(root) / "state.json", current)
+                    with patch.object(ns, "verify_files", side_effect=change_after_loading):
+                        with self.assertRaises(ns.WorkspaceError):
+                            ns.context(self.root, profile=profile, text_path=draft if profile == "reader" else None)
+
+    def test_reader_context_rejects_draft_change_while_building_packet(self):
+        draft = Path(self.temp.name) / "next.txt"; draft.write_text(TEXT, encoding="utf-8")
+        packet = self.q.reader_packet
+        def change_after_reading(*args, **kwargs):
+            result = packet(*args, **kwargs)
+            draft.write_text(TEXT + "有人在门外敲了三下。", encoding="utf-8")
+            return result
+        with patch.object(self.q, "reader_packet", side_effect=change_after_reading):
+            with self.assertRaises(ns.WorkspaceError): ns.context(self.root, profile="reader", text_path=draft)
+
+    def test_reader_output_cannot_overwrite_its_draft_input(self):
+        draft = Path(self.temp.name) / "draft.txt"; draft.write_text(TEXT, encoding="utf-8")
+        run = subprocess.run([sys.executable, str(SOURCE / "tools/novel_state.py"), "--root", str(self.root), "context", "--profile", "reader", "--text", str(draft), "--out", str(draft)], capture_output=True, text=True)
+        self.assertNotEqual(run.returncode, 0)
+        self.assertEqual(draft.read_text(encoding="utf-8"), TEXT)
+
+    def test_punctuation_only_queries_do_not_count_as_history_search(self):
+        with self.subTest(stage="brief"):
+            path, _ = self.brief({"history_queries": ["，; ；"]})
+            with self.assertRaises(ns.WorkspaceError): self.q.check_brief(self.root, path, self.a)
+        self.release(1)
+        with self.subTest(stage="search"):
+            with self.assertRaises(ns.WorkspaceError): self.q.search_history(self.root, ns.load_state(self.root), "，; ；", 5, None, self.a)
+        path, recpath, _, report = self.prepare(2)
+        report["narrative_review"]["history"]["queries"] = ["，; ；"]
+        with self.subTest(stage="release"):
+            with self.assertRaises(ns.WorkspaceError): self.gate(path, recpath, report)

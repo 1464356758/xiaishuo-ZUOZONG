@@ -15,6 +15,13 @@ def encoded(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def query_terms(value):
+    if not nonempty(value):
+        return []
+    return list(dict.fromkeys(term.lower() for term in re.split(r"[\s,，;；]+", value.strip())
+                              if any(char.isalnum() for char in term)))
+
+
 def enabled(state):
     return state["config"].get("narrative_review_required", False) is True
 
@@ -49,7 +56,8 @@ def search_history(root, state, query, limit, before, a):
     end = len(state["chapters"]) + 1 if before is None else before
     a.require(type(end) is int and 1 <= end <= len(state["chapters"]) + 1, "历史检索上界无效。")
     index = history_index(root, state, a)
-    terms = list(dict.fromkeys(t.lower() for t in re.split(r"[\s,，;；]+", query.strip()) if t))
+    terms = query_terms(query)
+    a.require(terms, "检索词只有分隔符或标点，不能算有效历史检索。")
     matches = []
     for entry in index["entries"]:
         if entry["chapter"] >= end:
@@ -59,7 +67,8 @@ def search_history(root, state, query, limit, before, a):
         if hits:
             matches.append(dict(entry, matched_terms=hits, keyword_hits=len(hits)))
     matches.sort(key=lambda x: (x["keyword_hits"], x["chapter"]), reverse=True)
-    return {"index_sha256": index["index_sha256"], "scanned_records": index["record_count"],
+    return {"index_sha256": index["index_sha256"], "indexed_records": index["record_count"],
+            "scanned_records": sum(entry["chapter"] < end for entry in index["entries"]),
             "before_chapter": end, "matching_records": len(matches), "candidates": matches[:limit],
             "note": "只检索全书摘要与实际推进；不是语义去重或全文已读证明。未命中须换别名、办法、关系查询并回查原文。"}
 
@@ -109,7 +118,7 @@ def validate_brief(state, brief, a):
         total = sum(x["target_han"] for x in scenes)
         a.require(state["config"]["chapter_han_min"] <= total <= state["config"]["chapter_han_max"], "场景预算合计与本书章长不符。预算不等于正文实测字数。")
     queries = brief.get("history_queries")
-    a.require(isinstance(queries, list) and (not state["chapters"] or queries) and all(nonempty(x) for x in queries), "非首章须准备全书相似桥段的检索词；首章可留空列表。")
+    a.require(isinstance(queries, list) and (not state["chapters"] or queries) and all(query_terms(x) for x in queries), "非首章须准备有效历史检索词，不能只填标点；首章可留空列表。")
     prose = "\n".join([brief["writer_brief"], brief["reader_promise"], *boundaries, *[x["purpose"] for x in scenes]])
     a.require(not surface_scan(prose), "干净任务书含制作字段、审稿标签或制作句；控制信息留在任务书元数据。")
     return brief
@@ -180,7 +189,7 @@ def reader_packet(root, state, text, a, history_from=None, history_to=None):
             report = json.loads(body)
             a.require(report.get("text_sha256") == item["text_sha256"] and report.get("record_sha256") == item["record_sha256"], "历史读者回顾与冻结正文或记录不符。")
             review = report.get("narrative_review")
-        if isinstance(review, dict) and isinstance(review.get("reader_updates"), list):
+        if isinstance(review, dict) and isinstance(review.get("reader_updates"), list) and review["reader_updates"]:
             updates = review["reader_updates"]
             for update in updates:
                 a.require(isinstance(update, dict) and update.get("kind") in ("observed", "claim", "uncertain") and nonempty(update.get("statement")), "历史读者回顾格式损坏。")
@@ -246,7 +255,7 @@ def validate(root, state, text, record, review, a):
     history = review.get("history", {})
     a.require(isinstance(history, dict) and history.get("index_sha256") == history_index(root, state, a)["index_sha256"], "全书历史检索索引已过期。")
     queries = history.get("queries")
-    a.require(isinstance(queries, list) and (not state["chapters"] or queries) and all(nonempty(x) for x in queries), "反重复检索须使用本章人物、办法或关系词。")
+    a.require(isinstance(queries, list) and (not state["chapters"] or queries) and all(query_terms(x) for x in queries), "反重复检索须使用有效人物、办法或关系词，不能只填标点。")
     comparisons = history.get("comparisons")
     a.require(isinstance(comparisons, list), "缺少全书相似桥段比较清单。")
     a.require(comparisons or nonempty(history.get("no_match_reason")), "未找到可比旧桥段时，说明范围、检索方式与局限。")

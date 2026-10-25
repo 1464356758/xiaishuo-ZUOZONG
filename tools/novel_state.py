@@ -507,15 +507,15 @@ def context(root, query="", budget=80000, story_time=None, profile="author", tex
         require(history_from is None and history_to is None and text_path is None, "候选正文与前情分批范围只用于reader资料。")
     if profile != "author":
         require(story_time is None, "writer/reader资料使用已写来源，不接受作者端记忆时间投影。")
-        before = digest((Path(root) / "state.json").read_text(encoding="utf-8"))
         if profile == "writer":
             packet = narrative_module().writer_packet(root, state, serial_api())
         else:
             require(text_path is not None, "reader资料须提供当前候选--text。")
             text = Path(text_path).read_text(encoding="utf-8")
             packet, _ = narrative_module().reader_packet(root, state, text, serial_api(), history_from, history_to)
+            require(Path(text_path).read_text(encoding="utf-8") == text, "组装读者资料期间候选正文改变，请重新读取。")
         require(len(packet) <= budget, "资料超出字符预算；未输出截断稿。author端分批读来源再压缩任务书，reader端可用--history-from/--history-to分批实际读原文并保留覆盖。")
-        require(digest((Path(root) / "state.json").read_text(encoding="utf-8")) == before, "组装资料期间来源状态改变，请重试。")
+        require(load_state(root) == state, "组装资料期间来源状态改变，请重试。")
         return packet
     items = records(root, state)
     parts = ["# 本次续写资料包", json.dumps(status(root), ensure_ascii=False, indent=2),
@@ -550,7 +550,7 @@ def context(root, query="", budget=80000, story_time=None, profile="author", tex
     else:
         result = required + "\n\n召回资料未放入本包：剩余预算不足，请另行搜索记录及原文。"
         omitted = len(facts)
-    require(load_state(root)["revision"] == state["revision"], "组装资料期间正式版本改变，请重新读取。")
+    require(load_state(root) == state, "组装资料期间来源状态改变，请重新读取。")
     return result + f"\n\n事实当前值共 {len(facts)} 条；本包未选入 {omitted} 条。关键词召回可能漏检，不能替代关键历史原文回查。\n"
 
 
@@ -753,6 +753,7 @@ def main():
             result = context(args.root, args.query, args.budget, args.time, args.profile, args.text, args.history_from, args.history_to)
             if args.out:
                 require(not Path(args.out).resolve().is_relative_to(Path(args.root).resolve()), "资料输出须在作品目录外，不能覆盖冻结来源或状态。")
+                require(args.text is None or Path(args.out).resolve() != Path(args.text).resolve(), "资料输出不能覆盖正在审读的候选正文；请使用不同路径。")
                 atomic_text(args.out, result)
                 result = {"path": str(Path(args.out).resolve()), "characters": len(result)}
         print(result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, indent=2))

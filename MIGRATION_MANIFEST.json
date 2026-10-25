@@ -1,0 +1,382 @@
+{
+  "migration_date": "2026-10-25",
+  "source_repository": "https://github.com/1464356758/XIAOSHUOv4",
+  "source_commit": "e605aaec2a5c2dde1c854e9ee2636f49cef0a058",
+  "target_repository": "https://github.com/1464356758/xiaishuo-ZUOZONG",
+  "target_base_commit": "10781aba966c3d72faf326003338f46a7012997a",
+  "system_version": "4.2-serial",
+  "contains_novel_data": false,
+  "novel_initialized": false,
+  "scope": "Copy system only; retain original workflow and defer optimization",
+  "excluded": [
+    "book live state and all novel content",
+    "exports",
+    "vault",
+    "book-specific research",
+    "source story status README and historical verification notes"
+  ],
+  "verification": {
+    "source_blob_checks": 46,
+    "python_tests_passed": 97,
+    "reader_tests_passed": 37
+  },
+  "files": {
+    ".github/workflows/validate.yml": {
+      "source_blob_sha": "80c16761c9a8667f2071d3c1b3dba1f35d8f2c36",
+      "target_blob_sha": "80c16761c9a8667f2071d3c1b3dba1f35d8f2c36",
+      "sha256": "80a609ce7639900a219fd0e2f3bbc69a7b212d9cf01a7017afa5df9fd55fc922",
+      "bytes": 1142,
+      "status": "copied_unchanged"
+    },
+    ".gitignore": {
+      "source_blob_sha": "18deb3735db07a3adf40197c7f1fe68ed97e90b8",
+      "target_blob_sha": "18deb3735db07a3adf40197c7f1fe68ed97e90b8",
+      "sha256": "dcff39563e042a7a026ccbb9f22d63a23bee2db0ddf932972f0feb570ba2c3c1",
+      "bytes": 77,
+      "status": "copied_unchanged"
+    },
+    "AGENTS.md": {
+      "source_blob_sha": "295056d02b325fe3fa5938111d992fa717bf63c6",
+      "target_blob_sha": "295056d02b325fe3fa5938111d992fa717bf63c6",
+      "sha256": "ae40b997ce6b51c91e00a6f8f8152eb98236dbe794f4caf647c77a4c28212b7a",
+      "bytes": 3700,
+      "status": "copied_unchanged"
+    },
+    "INIT_MANIFEST.json": {
+      "source_blob_sha": null,
+      "target_blob_sha": "e1335f65c7083aab64cde87525a890ad6b3a5a0f",
+      "sha256": "7c95559b19557e3521b01053f51b6a362e1f1618cf576a8e76ad2117d9c725ca",
+      "bytes": 4896,
+      "status": "generated_empty_template_or_migration_record"
+    },
+    "README.md": {
+      "source_blob_sha": "a5493e8eaeaf715a8d85da70c1a059f5b47679a0",
+      "target_blob_sha": "6de7f3d55b0b203c47b0c38b9d0312f036526400",
+      "sha256": "a02563f350a496bf04416cde34c581c320dfd2daffe362573b21142f32d058aa",
+      "bytes": 3061,
+      "status": "adapted_for_empty_master"
+    },
+    "book/README.md": {
+      "source_blob_sha": null,
+      "target_blob_sha": "c5952e69028ea340ab488d083be143cf15cd24a7",
+      "sha256": "4a40c0970ad956337f4a95fbcc0593818823a0fef829cadb6c51dc5e3a187008",
+      "bytes": 150,
+      "status": "generated_empty_template_or_migration_record"
+    },
+    "docs/正文直接读取.md": {
+      "source_blob_sha": "bfbc34619fd796c8bf7e9d9cff84e3c7d3e7556d",
+      "target_blob_sha": "bfbc34619fd796c8bf7e9d9cff84e3c7d3e7556d",
+      "sha256": "1a99bb2574712ebcb95f5001d508500873d84d4c19d9ad4464ad6ba480b93229",
+      "bytes": 2552,
+      "status": "copied_unchanged"
+    },
+    "docs/私密稿保存.md": {
+      "source_blob_sha": "720b2160342d6fbd04850cbde34c27ba85920e06",
+      "target_blob_sha": "720b2160342d6fbd04850cbde34c27ba85920e06",
+      "sha256": "320904e4c6fa7e058ff985c5260c0ba4fa28a616685ba518da68d539e2216cb2",
+      "bytes": 1154,
+      "status": "copied_unchanged"
+    },
+    "docs/线上同步协议.md": {
+      "source_blob_sha": "83d98af5350348c7cc4ac25c4f591de9123e7128",
+      "target_blob_sha": "83d98af5350348c7cc4ac25c4f591de9123e7128",
+      "sha256": "6385956233ab1a73fb8c8b935bbdf818fd997a6b578b6b13a7826c831aa3974c",
+      "bytes": 3527,
+      "status": "copied_unchanged"
+    },
+    "docs/迁移核验.md": {
+      "source_blob_sha": null,
+      "target_blob_sha": "04908ad3733a9c4bdfcc0a576df6799b2de8da85",
+      "sha256": "6cf25b236741d599fb50aa1f2a2d40c4fe015037c8909dace96d57adb76719e0",
+      "bytes": 1712,
+      "status": "generated_empty_template_or_migration_record"
+    },
+    "docs/连载冻结与发布前检查.md": {
+      "source_blob_sha": "6d0176d8a464cbc5d6a1631dfe3d03bd2e53f7aa",
+      "target_blob_sha": "6d0176d8a464cbc5d6a1631dfe3d03bd2e53f7aa",
+      "sha256": "b509187c47324ec10c062d95ed52dd330a9c6ce352e36c630e221479489a620f",
+      "bytes": 8313,
+      "status": "copied_unchanged"
+    },
+    "online/index.json": {
+      "source_blob_sha": null,
+      "target_blob_sha": "3b8d3dbca6fbab7608516a2fbfe6b4dc52db1eee",
+      "sha256": "9014e8d58c6133c69ede695e78cfd9d78306438903ef419c86b13c6f787c578a",
+      "bytes": 984,
+      "status": "generated_empty_template_or_migration_record"
+    },
+    "platforms.json": {
+      "source_blob_sha": "d6e23b6a163e95474480af340bf51772c330f350",
+      "target_blob_sha": "d6e23b6a163e95474480af340bf51772c330f350",
+      "sha256": "032bae530cc00c9e2111e832c95ab9263195730dc0d2896dfc1a79c5e5850b82",
+      "bytes": 875,
+      "status": "copied_unchanged"
+    },
+    "project_config.json": {
+      "source_blob_sha": "cf43c5cba7be8b112f8f6a70c0e27dc001792bf9",
+      "target_blob_sha": "e67e0d686e33ec4699faa244b531b512932cb759",
+      "sha256": "4efe4202b4df03c222816ee5ab9b1de745f9fbcef73c8e2cf4fa838be86b14e0",
+      "bytes": 786,
+      "status": "adapted_for_empty_master"
+    },
+    "requirements-private.txt": {
+      "source_blob_sha": "65b96890671800108db5d30d68d8949a710b1da2",
+      "target_blob_sha": "65b96890671800108db5d30d68d8949a710b1da2",
+      "sha256": "37b484db902b66118ca669553d1438cdb5bc8814d0eec3304938b13d305f47cf",
+      "bytes": 17,
+      "status": "copied_unchanged"
+    },
+    "research/README.md": {
+      "source_blob_sha": "8d3f6abaee23a817fe3a6574a849ffe1d5f448b6",
+      "target_blob_sha": "605f1918d4e3f38b1068aed556f87720753e7f87",
+      "sha256": "9ce8ab1b706bd6590b069879210a7179732acbbbbe7b5c9cc146011d4e37d8c4",
+      "bytes": 68,
+      "status": "adapted_for_empty_master"
+    },
+    "system_config.json": {
+      "source_blob_sha": "32f0d91c1784f3404d6b8d2915b3b7f3a55e18ea",
+      "target_blob_sha": "32f0d91c1784f3404d6b8d2915b3b7f3a55e18ea",
+      "sha256": "b2aeec13ca49339f3107c323a90fdd4f7e5e91523b920760bc69cb9a7c3f74b9",
+      "bytes": 407,
+      "status": "copied_unchanged"
+    },
+    "templates/回看记录.json": {
+      "source_blob_sha": "b2d4b94d2ded678a2ca708728098a91b44f9b196",
+      "target_blob_sha": "b2d4b94d2ded678a2ca708728098a91b44f9b196",
+      "sha256": "fea6b2486bc69eebaeda6dc377fb471cc23ea065afc644715f2003ae488865db",
+      "bytes": 699,
+      "status": "copied_unchanged"
+    },
+    "templates/完稿审查.json": {
+      "source_blob_sha": "ea202e030d7e78ae9816400747b9ae439dcfc266",
+      "target_blob_sha": "ea202e030d7e78ae9816400747b9ae439dcfc266",
+      "sha256": "d3a1f91bce54f73c19bcd2e016db80ab9e6f99654c44278b85e87c7529f32896",
+      "bytes": 475,
+      "status": "copied_unchanged"
+    },
+    "templates/平台研究.json": {
+      "source_blob_sha": "2a9e9753a17530bece9cc8bc1dcf7a89be7e7cb7",
+      "target_blob_sha": "2a9e9753a17530bece9cc8bc1dcf7a89be7e7cb7",
+      "sha256": "776b400badde0c8de7eeedca59f29a9b3999990a219d52ddf37d6ed8593885d7",
+      "bytes": 428,
+      "status": "copied_unchanged"
+    },
+    "templates/开书卡.md": {
+      "source_blob_sha": "e69042bf4438880afcf2fb0b83e922cfa804277a",
+      "target_blob_sha": "e69042bf4438880afcf2fb0b83e922cfa804277a",
+      "sha256": "58cb77f18605d273b119764912bfd8970ba97b1e6eeab328f7961d01992a3931",
+      "bytes": 910,
+      "status": "copied_unchanged"
+    },
+    "templates/改稿影响.md": {
+      "source_blob_sha": "852ace826df0bbff518c9a8134dbc1194098136b",
+      "target_blob_sha": "852ace826df0bbff518c9a8134dbc1194098136b",
+      "sha256": "ddf71d629eaf43409006f2fe48552db947239214f3fa575c2f458d4bb2b4f55e",
+      "bytes": 605,
+      "status": "copied_unchanged"
+    },
+    "templates/新聊天接管.txt": {
+      "source_blob_sha": "af2c84a3a77924029bfabf4e7c69b560679bef77",
+      "target_blob_sha": "af2c84a3a77924029bfabf4e7c69b560679bef77",
+      "sha256": "3bd699052d327ba4f7b771f8d2dcb39886cb847335808c247204a9dd6ff8d8e6",
+      "bytes": 1172,
+      "status": "copied_unchanged"
+    },
+    "templates/旧错前向处理.json": {
+      "source_blob_sha": "d0395536a9f002b1dd96c8cb7eb37dca83b82539",
+      "target_blob_sha": "d0395536a9f002b1dd96c8cb7eb37dca83b82539",
+      "sha256": "dec9a78364233b18ffb783e9a886e65e362613d0b82d54f8a136fb144de28b84",
+      "bytes": 404,
+      "status": "copied_unchanged"
+    },
+    "templates/章后记录.json": {
+      "source_blob_sha": "0df4bbf70a5688c927d129b3c324df2022338a9b",
+      "target_blob_sha": "0df4bbf70a5688c927d129b3c324df2022338a9b",
+      "sha256": "14593bdac4186621f98d0d1d4a49f2084556c0be69ac2bac06c07bf1ccb9e425",
+      "bytes": 1087,
+      "status": "copied_unchanged"
+    },
+    "templates/选题候选.json": {
+      "source_blob_sha": "a9372cee390d9a42657e98a2f1b7e17593596d47",
+      "target_blob_sha": "a9372cee390d9a42657e98a2f1b7e17593596d47",
+      "sha256": "6354ea8cf426518773c7defcdc5111fff11adcb2d6d30c90029791171fdbc208",
+      "bytes": 463,
+      "status": "copied_unchanged"
+    },
+    "tests/test_novel_state.py": {
+      "source_blob_sha": "bbcfb4db9df0aa059ef329a1afe846f4dee8a98b",
+      "target_blob_sha": "bbcfb4db9df0aa059ef329a1afe846f4dee8a98b",
+      "sha256": "f63eed65d8118042d8d7b5561186bd9a7c28a64f9bb73e84ba5750d35f2fce69",
+      "bytes": 9355,
+      "status": "copied_unchanged"
+    },
+    "tests/test_online_state.py": {
+      "source_blob_sha": "f9461e2f52c057169b09f181ad626bc32c47be78",
+      "target_blob_sha": "f9461e2f52c057169b09f181ad626bc32c47be78",
+      "sha256": "d3444003e3677d076bf77628a73e75fe593a759311eafea9869132efc2d167b6",
+      "bytes": 9859,
+      "status": "copied_unchanged"
+    },
+    "tests/test_private_book.py": {
+      "source_blob_sha": "4725afce41466140b05f08d8b9c70b55c100a600",
+      "target_blob_sha": "4725afce41466140b05f08d8b9c70b55c100a600",
+      "sha256": "1d9653df827a0ba06211f4e689306f344fc8999867eeaf3405972c58affc11b7",
+      "bytes": 9866,
+      "status": "copied_unchanged"
+    },
+    "tests/test_serial_release.py": {
+      "source_blob_sha": "ef1cf298afb2d3135528518d2dd909e8cb58456c",
+      "target_blob_sha": "ef1cf298afb2d3135528518d2dd909e8cb58456c",
+      "sha256": "f565e796e5a4ae9dc4e1c09ba0bc93798093f427ff04d3fce25cb1bd390556fe",
+      "bytes": 13710,
+      "status": "copied_unchanged"
+    },
+    "tests/test_v4_reliability.py": {
+      "source_blob_sha": "e8becf3eb65c47f32c58b8a7b8b4b914d32664b5",
+      "target_blob_sha": "e8becf3eb65c47f32c58b8a7b8b4b914d32664b5",
+      "sha256": "6845131b2d1aca0b941c13acd43b224617758e8b813cafb0889b96e6596a4f9c",
+      "bytes": 10730,
+      "status": "copied_unchanged"
+    },
+    "tools/make_init_package.py": {
+      "source_blob_sha": "e673b856c46621e04beed117cf9a698b627595d1",
+      "target_blob_sha": "e673b856c46621e04beed117cf9a698b627595d1",
+      "sha256": "20382a330021b0d01b86671cfcfe2670c9be94dc8bc24e3430754e48ecd147fa",
+      "bytes": 4581,
+      "status": "copied_unchanged"
+    },
+    "tools/novel_state.py": {
+      "source_blob_sha": "8f534b543a67802e7af34d7848765bc79df40159",
+      "target_blob_sha": "8f534b543a67802e7af34d7848765bc79df40159",
+      "sha256": "dd1b205c9599326f855ec0fd76fd7ef5160b3376bab9aeb289dace89bfaf29f0",
+      "bytes": 44765,
+      "status": "copied_unchanged"
+    },
+    "tools/online_state.py": {
+      "source_blob_sha": "76eae681e112c07f6f17d8c0ad0a71e8537a6003",
+      "target_blob_sha": "76eae681e112c07f6f17d8c0ad0a71e8537a6003",
+      "sha256": "28c03dd8fb45e0fda86c60fda7c38570a2a13941238ba92a9800e255f2c979c0",
+      "bytes": 18514,
+      "status": "copied_unchanged"
+    },
+    "tools/private_book.py": {
+      "source_blob_sha": "915a1089bdfb112f59f34e0a66ee218f7679ea26",
+      "target_blob_sha": "915a1089bdfb112f59f34e0a66ee218f7679ea26",
+      "sha256": "a0d586f15890b5b3aa23c6b4439c65212bc8e70264a77ddac5953790239d1d68",
+      "bytes": 15462,
+      "status": "copied_unchanged"
+    },
+    "tools/serial_release.py": {
+      "source_blob_sha": "3e430ccff3357c7ea9fce8ddaf8181bf6f7c03a3",
+      "target_blob_sha": "3e430ccff3357c7ea9fce8ddaf8181bf6f7c03a3",
+      "sha256": "3e339ddb65106f55825c5991675c517683cd3e57a6b04e96c3d048bf6e12207f",
+      "bytes": 23890,
+      "status": "copied_unchanged"
+    },
+    "tools/verify_900k.py": {
+      "source_blob_sha": "a7ebad320f5d1f5ac5d65aef06598fb077f012c5",
+      "target_blob_sha": "a7ebad320f5d1f5ac5d65aef06598fb077f012c5",
+      "sha256": "8f512cb008701bc22f34d8d8a4fa33ebafefabd1de50b123ac11a8111763db17",
+      "bytes": 5272,
+      "status": "copied_unchanged"
+    },
+    "web/dist/app.js": {
+      "source_blob_sha": "06c42229db3972bd5cc27948fed1e19d0a145070",
+      "target_blob_sha": "6c3dead376a9a0db799891e7f7280f497759683c",
+      "sha256": "bf389afa5b8326f70345dfd1832b890c521b6197f79bff6f90ce4175f5a9a3ba",
+      "bytes": 23569,
+      "status": "adapted_for_empty_master"
+    },
+    "web/dist/core.mjs": {
+      "source_blob_sha": "bdd1289cddf0129e6e424ba86d3396aa761dfe1f",
+      "target_blob_sha": "bdd1289cddf0129e6e424ba86d3396aa761dfe1f",
+      "sha256": "85187872978a09dc5f69e2b0e907c94aed9298e2ede1134b32f40b7507f36d56",
+      "bytes": 17880,
+      "status": "copied_unchanged"
+    },
+    "web/dist/icon.svg": {
+      "source_blob_sha": "da11eb39af946a9ea3fa2e3418fd2a684492bd4e",
+      "target_blob_sha": "da11eb39af946a9ea3fa2e3418fd2a684492bd4e",
+      "sha256": "f0c5df2831815a60b56e1483ff935ec748f38229176158e97c8ba3bb0c79778c",
+      "bytes": 412,
+      "status": "copied_unchanged"
+    },
+    "web/dist/index.html": {
+      "source_blob_sha": "bcde425d9fe31764a896dcce455a4872c5d46782",
+      "target_blob_sha": "fd00d31c810c329a437f1ed642105b6b13971b4e",
+      "sha256": "931a351b4311df335898aa5e25cf7bfd6ced7bd2151554793f866046ba521984",
+      "bytes": 10107,
+      "status": "adapted_for_empty_master"
+    },
+    "web/dist/manifest.webmanifest": {
+      "source_blob_sha": "faf45929ff4a4f23165bbb05410a01750602615d",
+      "target_blob_sha": "faf45929ff4a4f23165bbb05410a01750602615d",
+      "sha256": "910a3dab9e72c060e4f5c4ca988d3401c01b6b800503557f9e996024a1899362",
+      "bytes": 250,
+      "status": "copied_unchanged"
+    },
+    "web/dist/style.css": {
+      "source_blob_sha": "f56ed1d6ddf0e1c52365354777518c3da9338a98",
+      "target_blob_sha": "f56ed1d6ddf0e1c52365354777518c3da9338a98",
+      "sha256": "fb76ab209569d9a666526f1b902e4fbacdb6dbefb9fd6e8b25ae6f7c54537404",
+      "bytes": 24109,
+      "status": "copied_unchanged"
+    },
+    "web/package.json": {
+      "source_blob_sha": "65f0d5a31d9c84a3015da329b64fab028f9304c2",
+      "target_blob_sha": "65f0d5a31d9c84a3015da329b64fab028f9304c2",
+      "sha256": "513c79a33dcc96a905d98ff2c54ab8f06de5222282b4cf13d8c1dc10f987d5c1",
+      "bytes": 126,
+      "status": "copied_unchanged"
+    },
+    "web/tests/core.test.mjs": {
+      "source_blob_sha": "057f85532eea6603f55732307006d3ea013a15ec",
+      "target_blob_sha": "057f85532eea6603f55732307006d3ea013a15ec",
+      "sha256": "806c4e565119faf7d279847147027fb6a8e175006a80dd1c2947c05c4fe50652",
+      "bytes": 13105,
+      "status": "copied_unchanged"
+    },
+    "初始化系统包.zip": {
+      "source_blob_sha": null,
+      "target_blob_sha": "e7b0909bcfcc69bddc358def3b16c5fb468f6f06",
+      "sha256": "2a81dc8b6cc53914311427be51b07310c7dd915aba120c32db72152b55052d56",
+      "bytes": 92578,
+      "status": "generated_empty_template_or_migration_record"
+    },
+    "启动新书.txt": {
+      "source_blob_sha": "e01aa1148edbba813f059f928ddcb6b819addff4",
+      "target_blob_sha": "e01aa1148edbba813f059f928ddcb6b819addff4",
+      "sha256": "b312bc1816e9330e6ab9ed5e49e489824fbaade5485ce0524a4b6dac8e8c5bdc",
+      "bytes": 3823,
+      "status": "copied_unchanged"
+    },
+    "工具使用与数据格式.md": {
+      "source_blob_sha": "1dad513151f8f298b3f04ff7172f512f09612cc3",
+      "target_blob_sha": "1dad513151f8f298b3f04ff7172f512f09612cc3",
+      "sha256": "603a6df2636069f096522ee5fd27fdfd6db85dab61a180599a522dac32f08193",
+      "bytes": 8517,
+      "status": "copied_unchanged"
+    },
+    "平台研究与选题.md": {
+      "source_blob_sha": "6e50b5eb3436e78383be5d958a5989b305e46624",
+      "target_blob_sha": "6e50b5eb3436e78383be5d958a5989b305e46624",
+      "sha256": "b3d99ecf11bd4e1c561aab8ab8b13ba7bd97ebb4192f8af70e93852cf36f6704",
+      "bytes": 4222,
+      "status": "copied_unchanged"
+    },
+    "执行规程.md": {
+      "source_blob_sha": "8c35151037a857b3f0a42f4d1d8c84cffc274aef",
+      "target_blob_sha": "8c35151037a857b3f0a42f4d1d8c84cffc274aef",
+      "sha256": "4da8a08f0da36e2a16b5e6ffe3afda135974fca8e7c4f851bc4f256288c530e2",
+      "bytes": 12200,
+      "status": "copied_unchanged"
+    },
+    "每日一章指令.txt": {
+      "source_blob_sha": "946ad4393da736cc9fc2065fa7cce0719d923188",
+      "target_blob_sha": "946ad4393da736cc9fc2065fa7cce0719d923188",
+      "sha256": "d7b006b4f30cdff49a5e891f277e80dcfeb0d08d2e63c2b07111c5f53ad23c52",
+      "bytes": 1421,
+      "status": "copied_unchanged"
+    }
+  }
+}

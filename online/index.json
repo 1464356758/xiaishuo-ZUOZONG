@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "system_version": "4.2-serial",
+  "initialized": false,
+  "book": {
+    "id": null,
+    "title": "新小说（待初始化）",
+    "platform": null,
+    "selected_topic_id": null
+  },
+  "source": {
+    "repository_url": "https://github.com/1464356758/xiaishuo-ZUOZONG",
+    "branch": "main",
+    "generated_at": null,
+    "state_revision": 0,
+    "workflow_revision": 0
+  },
+  "progress": {
+    "target_chapters": 100,
+    "adopted_chapters": 0,
+    "target_han": 900000,
+    "actual_han": 0,
+    "completed": false,
+    "needs_revalidation": []
+  },
+  "task": {
+    "phase": "NOT_INITIALIZED",
+    "label": "空系统母版，等待后续优化",
+    "chapter": 1,
+    "detail": "已复制V4.2系统，未创建小说、未选择平台或题材。",
+    "next_action": "按作者后续指令优化系统；需要开新书时再执行启动新书.txt。",
+    "updated_at": null
+  },
+  "chapters": [],
+  "topics": [],
+  "research": null,
+  "history": []
+}

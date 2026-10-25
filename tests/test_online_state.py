@@ -112,13 +112,13 @@ class OnlineTests(unittest.TestCase):
             manifest=json.loads(archive.read('online/index.json'));self.assertFalse(manifest['initialized']);self.assertIsNone(manifest['book']['id'])
             self.assertEqual(manifest['topics'],[])
 
-    def test_v42_template_bootstraps_two_independent_serial_books(self):
+    def test_v43_template_bootstraps_two_independent_serial_books(self):
         output=Path(self.tmp.name)/'serial-init.zip';pack.build(SOURCE,output)
         identities=[]
         for number in (1,2):
             target=Path(self.tmp.name)/f'fresh-{number}'
             with zipfile.ZipFile(output) as archive:
-                for required in ('tools/serial_release.py','每日一章指令.txt','docs/连载冻结与发布前检查.md'):
+                for required in ('tools/serial_release.py','tools/narrative_quality.py','每日一章指令.txt','docs/连载冻结与发布前检查.md','docs/写作与叙事检查.md','docs/专项技法.md'):
                     self.assertIn(required,archive.namelist())
                 archive.extractall(target)
             run=subprocess.run([sys.executable,'tools/online_state.py','bootstrap','--repo',f'https://github.com/example/fresh-{number}'],cwd=target,capture_output=True,text=True)
@@ -126,6 +126,8 @@ class OnlineTests(unittest.TestCase):
             state=json.loads((target/'book/state.json').read_text())
             identities.append(state['book_id'])
             self.assertTrue(state['config']['serial_mode'])
+            self.assertTrue(state['config']['narrative_review_required'])
+            self.assertEqual(json.loads((target/'project_config.json').read_text())['system_version'],'4.3-quality')
             self.assertEqual(state['serialization']['frozen'],{})
             self.assertEqual(state['serialization']['published'],{})
             self.assertEqual(json.loads((target/'book/workflow.json').read_text())['phase'],'WAITING_PLATFORM')

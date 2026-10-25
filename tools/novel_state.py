@@ -25,6 +25,17 @@ class WorkspaceError(ValueError):
 
 
 _SERIAL_MODULE = None
+_NARRATIVE_MODULE = None
+SYSTEM_VERSION = "4.3-quality"
+
+
+def narrative_module():
+    global _NARRATIVE_MODULE
+    if _NARRATIVE_MODULE is None:
+        spec = importlib.util.spec_from_file_location("novel_narrative_quality", Path(__file__).with_name("narrative_quality.py"))
+        _NARRATIVE_MODULE = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_NARRATIVE_MODULE)
+    return _NARRATIVE_MODULE
 
 
 def serial_module():
@@ -38,7 +49,7 @@ def serial_module():
 
 def serial_api():
     names = ("require", "digest", "han_count", "read_json", "atomic_json", "immutable_text", "inside",
-             "load_state", "verify_files", "writer_lock", "validate_record", "records", "quote_exists", "review_status")
+             "load_state", "verify_files", "writer_lock", "validate_record", "records", "quote_exists", "review_status", "narrative_module")
     return SimpleNamespace(**{name: globals()[name] for name in names})
 
 
@@ -135,6 +146,9 @@ def verify_files(root, state):
                     f"第 {key} 章文件与采用版本不符：{chapter[field]}")
     if state.get("serialization", {}).get("enabled"):
         serial_module().verify_frozen(state, serial_api())
+    for pin in state.get("writing_briefs", {}).values():
+        path = inside(root, pin["path"])
+        require(path.is_file() and digest(path.read_text(encoding="utf-8")) == pin["sha256"], "登记的写作任务书缺失或被改写。")
 
 
 def init(root, title, overrides=None):
@@ -147,13 +161,16 @@ def init(root, title, overrides=None):
                   "strict_length": True, "review_interval": 5, "max_local_repairs": 3,
                   "serial_mode": False, "serial_stage_size": 10, "serial_lookahead": 3,
                   "opening_hook_max_han": 800, "opening_core_max_han": 3000,
-                  "opening_impact_max_han": 3000}
+                  "opening_impact_max_han": 3000,
+                  "narrative_review_required": False}
         config.update(overrides or {})
         require(config["review_interval"] >= 1, "回看间隔必须为正数。")
         require(0 <= config["chapter_han_min"] <= config["chapter_han_max"], "章长区间无效。")
         require(isinstance(config["target_chapters"], int) and not isinstance(config["target_chapters"], bool) and config["target_chapters"] > 0, "目标章数必须为正整数。")
         require(isinstance(config["max_local_repairs"], int) and 0 <= config["max_local_repairs"] <= 3, "自动局部修订上限为0—3。")
         require(0 <= config["book_han_min"] <= config["book_han_max"], "全书字数范围无效。")
+        require(type(config["narrative_review_required"]) is bool, "narrative_review_required必须为布尔值。")
+        require(not config["narrative_review_required"] or config["serial_mode"] is True, "叙事检查须与连载冻结一起启用。旧工程保持原检查，不静默追认。")
         state = {"schema_version": 2, "book_id": str(uuid.uuid4()), "title": title,
                  "revision": 0, "config": config, "chapters": {},
                  "checkpoints": [], "needs_revalidation": [], "inputs": {},
@@ -480,10 +497,26 @@ def checkpoint(root, report_path):
         return {"revision": state["revision"], **review_status(state)}
 
 
-def context(root, query="", budget=80000, story_time=None):
+def context(root, query="", budget=80000, story_time=None, profile="author", text_path=None, history_from=None, history_to=None):
     state = load_state(root)
     verify_files(root, state)
     require(not state["needs_revalidation"], "前文变更后的影响核对未完成，不能组装正常续写包。")
+    require(profile in ("author", "writer", "reader"), "未知资料类型。")
+    require(type(budget) is int and budget > 0, "资料预算须为正整数字符数。")
+    if profile != "reader":
+        require(history_from is None and history_to is None and text_path is None, "候选正文与前情分批范围只用于reader资料。")
+    if profile != "author":
+        require(story_time is None, "writer/reader资料使用已写来源，不接受作者端记忆时间投影。")
+        before = digest((Path(root) / "state.json").read_text(encoding="utf-8"))
+        if profile == "writer":
+            packet = narrative_module().writer_packet(root, state, serial_api())
+        else:
+            require(text_path is not None, "reader资料须提供当前候选--text。")
+            text = Path(text_path).read_text(encoding="utf-8")
+            packet, _ = narrative_module().reader_packet(root, state, text, serial_api(), history_from, history_to)
+        require(len(packet) <= budget, "资料超出字符预算；未输出截断稿。author端分批读来源再压缩任务书，reader端可用--history-from/--history-to分批实际读原文并保留覆盖。")
+        require(digest((Path(root) / "state.json").read_text(encoding="utf-8")) == before, "组装资料期间来源状态改变，请重试。")
+        return packet
     items = records(root, state)
     parts = ["# 本次续写资料包", json.dumps(status(root), ensure_ascii=False, indent=2),
              "说明：这是待阅读资料，不证明GPT已读完。字数预算按字符计，不是token预算。"]
@@ -603,10 +636,10 @@ def snapshot(root, out):
         # 快照同时携带本工具和关键规程，恢复不依赖原临时目录。
         package = Path(__file__).resolve().parents[1]
         files["SYSTEM/tools/novel_state.py"] = Path(__file__).read_bytes()
-        for name in ("启动指令.txt", "启动新书.txt", "每日一章指令.txt", "docs/连载冻结与发布前检查.md", "平台研究与选题.md", "platforms.json", "执行规程.md", "工具使用与数据格式.md", "system_config.json", "project_config.json"):
+        for name in ("启动指令.txt", "启动新书.txt", "每日一章指令.txt", "docs/连载冻结与发布前检查.md", "docs/写作与叙事检查.md", "docs/专项技法.md", "平台研究与选题.md", "platforms.json", "执行规程.md", "工具使用与数据格式.md", "system_config.json", "project_config.json"):
             path = package / name
             if path.is_file(): files["SYSTEM/" + name] = path.read_bytes()
-        for name in ("online_state.py", "make_init_package.py", "serial_release.py"):
+        for name in ("online_state.py", "make_init_package.py", "serial_release.py", "narrative_quality.py"):
             path = package / "tools" / name
             if path.is_file(): files["SYSTEM/tools/" + name] = path.read_bytes()
         templates = package / "templates"
@@ -638,6 +671,11 @@ def main():
     p = subs.add_parser("checkpoint"); p.add_argument("--report", required=True)
     p = subs.add_parser("context"); p.add_argument("--query", default=""); p.add_argument("--budget", type=int, default=80000); p.add_argument("--out")
     p.add_argument("--time", type=int)
+    p.add_argument("--profile", choices=("author", "writer", "reader"), default="author")
+    p.add_argument("--text"); p.add_argument("--history-from", type=int); p.add_argument("--history-to", type=int)
+    p = subs.add_parser("brief-request"); p.add_argument("--out", required=True)
+    p = subs.add_parser("brief-check"); p.add_argument("--file", required=True)
+    p = subs.add_parser("history-search"); p.add_argument("--query", required=True); p.add_argument("--limit", type=int, default=5); p.add_argument("--before", type=int)
     p = subs.add_parser("set-input"); p.add_argument("--kind", choices=("canon", "roadmap"), required=True); p.add_argument("--file", required=True); p.add_argument("--reason", required=True); p.add_argument("--base-revision", type=int, required=True)
     for command in ("candidate", "repair"):
         p = subs.add_parser(command); p.add_argument("--chapter", type=int, required=True); p.add_argument("--text", required=True); p.add_argument("--mode", choices=("write", "edit"), default="write"); p.add_argument("--reason", default="")
@@ -704,10 +742,18 @@ def main():
             result = serial_module().incident(args.root, args.report, serial_api())
         elif args.command == "serial-plan":
             result = serial_module().plan(args.root, args.report, serial_api())
+        elif args.command == "brief-request":
+            result = narrative_module().request_brief(args.root, args.out, serial_api())
+        elif args.command == "brief-check":
+            result = narrative_module().check_brief(args.root, args.file, serial_api())
+        elif args.command == "history-search":
+            state = load_state(args.root); verify_files(args.root, state)
+            result = narrative_module().search_history(args.root, state, args.query, args.limit, args.before, serial_api())
         else:
-            result = context(args.root, args.query, args.budget, args.time)
+            result = context(args.root, args.query, args.budget, args.time, args.profile, args.text, args.history_from, args.history_to)
             if args.out:
-                Path(args.out).write_text(result, encoding="utf-8")
+                require(not Path(args.out).resolve().is_relative_to(Path(args.root).resolve()), "资料输出须在作品目录外，不能覆盖冻结来源或状态。")
+                atomic_text(args.out, result)
                 result = {"path": str(Path(args.out).resolve()), "characters": len(result)}
         print(result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, indent=2))
     except (WorkspaceError, OSError, KeyError, TypeError, json.JSONDecodeError, zipfile.BadZipFile) as exc:

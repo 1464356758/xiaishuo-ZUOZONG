@@ -79,18 +79,22 @@ def canonical_sha(text, record, a):
     return a.digest(json.dumps(dict(record, measured_han=a.han_count(text)), ensure_ascii=False, indent=2) + "\n")
 
 
-def bindings(state, text, record, a):
+def bindings(root, state, text, record, a):
     n = record["chapter"]; task = state["tasks"].get(str(n), {})
     a.require(state.get("serialization", {}).get("enabled"), "本书尚未启用连载冻结。")
     guard_chapter(state, n, a)
     a.require(n == len(state["chapters"]) + 1, "发布前检查只接受下一章。")
     a.require(task.get("phase") == "candidate" and task.get("candidate_sha256") == a.digest(text),
               "先登记当前候选，再生成检查请求。")
-    return {"schema_version": 1, "book_id": state["book_id"], "chapter": n,
+    result = {"schema_version": 1, "book_id": state["book_id"], "chapter": n,
             "base_revision": state["revision"], "task_id": task["task_id"], "repairs": task["repairs"],
             "text_sha256": a.digest(text), "record_sha256": canonical_sha(text, record, a),
             "canon_sha256": state["inputs"]["canon"]["sha256"],
             "roadmap_sha256": state["inputs"]["roadmap"]["sha256"]}
+    if a.narrative_module().enabled(state):
+        _, sha = a.narrative_module().current_brief(root, state, a)
+        result.update(narrative_review_version=1, writing_brief_sha256=sha)
+    return result
 
 
 def checkpoint_scope(state, record):
@@ -123,7 +127,7 @@ def evidence(root, state, text, n, item, a, current_only=False):
 
 
 def skeleton(root, state, text, record, a):
-    b = bindings(state, text, record, a); n = record["chapter"]
+    b = bindings(root, state, text, record, a); n = record["chapter"]
     texts, recs = source_map(state, record, a); recs[str(n)] = b["record_sha256"]
     ev = {"chapter": n, "sha256": b["text_sha256"], "quote": ""}
     report = dict(b, decision="pending", read_full_text=False, blocking_issues=["尚未实际阅读检查"],
@@ -156,6 +160,8 @@ def skeleton(root, state, text, record, a):
                                 "coverage": {str(k): texts[str(k)] for k in range(start, end + 1)},
                                 "record_coverage": {str(k): recs[str(k)] for k in range(start, end + 1)},
                                 "findings": [], **{key: "" for key in CONCLUSIONS}}
+    if a.narrative_module().enabled(state):
+        report["narrative_review"] = a.narrative_module().skeleton(root, state, text, record, a)
     return report
 
 
@@ -173,7 +179,7 @@ def request(root, text_path, record_path, out, a):
 
 def validate(root, state, text, record, report, a):
     a.validate_record(root, state, text, record)
-    b = bindings(state, text, record, a); n = record["chapter"]
+    b = bindings(root, state, text, record, a); n = record["chapter"]
     a.require(all(report.get(k) == v for k, v in b.items()), "发布前检查已过期或不对应当前正文、记录、候选、设定及路线。")
     a.require(report.get("decision") == "release" and report.get("read_full_text") is True and report.get("blocking_issues") == [], "发布前仍有阻断项或未实际阅读。")
     expected = skeleton(root, state, text, record, a)
@@ -235,6 +241,8 @@ def validate(root, state, text, record, report, a):
         evidence(root, state, text, n, item.get("evidence"), a, current_only=True)
         if item["action"] == "contain":
             a.require(type(item.get("next_chapter")) is int and n < item["next_chapter"] <= state["config"]["target_chapters"], "未解决问题须有下一处理章。")
+    if a.narrative_module().enabled(state):
+        a.narrative_module().validate(root, state, text, record, report.get("narrative_review"), a)
     return report
 
 
@@ -321,6 +329,7 @@ def summary(state):
             "published_chapters": len(serial["published"]),
             "publication_status": "只统计真实回执；无回执不等于未发布",
             "open_incidents": sum(x["status"] == "open" for x in serial["incidents"].values()),
+            "narrative_review_required": state["config"].get("narrative_review_required", False),
             "release_check_required": True}
 
 

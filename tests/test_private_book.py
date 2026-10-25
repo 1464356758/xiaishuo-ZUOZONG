@@ -27,6 +27,7 @@ class PrivateBookTests(unittest.TestCase):
         # 这些用例验证旧版存储/迁移，不测试新书发布前检查。
         legacy = ns.read_json(self.project / 'system_config.json')
         legacy['serial_mode'] = False
+        legacy['narrative_review_required'] = False
         ns.atomic_json(self.project / 'system_config.json', legacy)
         online.bootstrap(self.project, 'https://github.com/example/synthetic')
         for kind in ('canon', 'roadmap'):

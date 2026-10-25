@@ -13,5 +13,6 @@
   "serial_lookahead": 3,
   "opening_hook_max_han": 800,
   "opening_core_max_han": 3000,
-  "opening_impact_max_han": 3000
+  "opening_impact_max_han": 3000,
+  "narrative_review_required": true
 }

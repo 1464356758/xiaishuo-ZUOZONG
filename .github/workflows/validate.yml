@@ -11,6 +11,9 @@ jobs:
         with:
           python-version: '3.12'
       - run: python3 -m pip install -r requirements-private.txt
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
       - run: python3 -m unittest discover -s tests -v
       - name: Validate published index when initialized
         run: |
@@ -24,9 +27,6 @@ jobs:
           else:
               print('Empty initialization template; no book data yet.')
           PY
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
       - name: Test reader when included
         run: |
-          node -e "if(require('fs').existsSync('web/tests/core.test.mjs'))require('child_process').execFileSync(process.execPath,['--test','web/tests/core.test.mjs'],{stdio:'inherit'})"
+          node -e "const fs=require('fs');if(fs.existsSync('web/tests'))require('child_process').execFileSync(process.execPath,['--test',...fs.readdirSync('web/tests').filter(x=>x.endsWith('.test.mjs')).map(x=>'web/tests/'+x)],{stdio:'inherit'})"

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
@@ -450,7 +451,8 @@ def adopt(root, text_path, record_path, revalidate=False):
         immutable_text(record_target, encoded)
         item = {"title": record["title"], "stage": record["stage"], "text_path": text_relative,
                 "text_sha256": sha, "record_path": record_relative,
-                "record_sha256": digest(encoded), "han_count": count}
+                "record_sha256": digest(encoded), "han_count": count,
+                "adopted_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
         state["chapters"][str(chapter)] = item
         pending = set(state["needs_revalidation"])
         pending.discard(chapter)
@@ -639,9 +641,15 @@ def snapshot(root, out):
         for name in ("启动指令.txt", "启动新书.txt", "每日一章指令.txt", "docs/连载冻结与发布前检查.md", "docs/写作与叙事检查.md", "docs/专项技法.md", "平台研究与选题.md", "platforms.json", "执行规程.md", "工具使用与数据格式.md", "system_config.json", "project_config.json"):
             path = package / name
             if path.is_file(): files["SYSTEM/" + name] = path.read_bytes()
-        for name in ("online_state.py", "make_init_package.py", "serial_release.py", "narrative_quality.py"):
+        for name in ("online_state.py", "make_init_package.py", "serial_release.py", "narrative_quality.py", "daily_update.py", "check_updates.mjs"):
             path = package / "tools" / name
             if path.is_file(): files["SYSTEM/tools/" + name] = path.read_bytes()
+        for name in ("core.mjs", "hub-core.mjs"):
+            path = package / "web/dist" / name
+            if path.is_file(): files["SYSTEM/web/dist/" + name] = path.read_bytes()
+        for name in ("每日自动更新.md", "管理端与代发端.md", "旧书接入工作台.md"):
+            path = package / "docs" / name
+            if path.is_file(): files["SYSTEM/docs/" + name] = path.read_bytes()
         templates = package / "templates"
         if templates.is_dir():
             for path in sorted(templates.iterdir()):

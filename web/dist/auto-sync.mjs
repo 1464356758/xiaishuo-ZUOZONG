@@ -1,3 +1,4 @@
+import {mergeQueryHistory} from './query-model.mjs';
 // One ordered save at a time. Edits made during a request get their own latest
 // snapshot; an ambiguous failure requires an explicit retry, never a loop.
 export class AutoSync{
@@ -33,5 +34,5 @@ export function mergeRegistries(remote,local,base=null){
   }
   const rs=remote.settings||{},ls=local.settings||{},bs=base?.settings||{};
   let settings=rs;if(base){if(same(rs,bs))settings=ls;else if(!same(ls,bs)&&!same(ls,rs))conflicts.push({settings:true});}else if(!Object.keys(rs).length)settings=ls;else if(Object.keys(ls).length&&!same(ls,rs))conflicts.push({settings:true});
-  const {settings:oldSettings,...rest}=remote;return {registry:{...rest,books,...(Object.keys(settings).length?{settings}:{})},conflicts};
+  const {settings:oldSettings,...rest}=remote;const history=mergeQueryHistory(remote.query_history||[],local.query_history||[]);return {registry:{...rest,books,...(Object.keys(settings).length?{settings}:{}),...(history.length?{query_history:history}:{})},conflicts};
 }

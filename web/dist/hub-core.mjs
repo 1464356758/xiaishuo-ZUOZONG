@@ -1,8 +1,9 @@
 import {parseRepository, validateManifest, sha256, canonicalJSON, ReaderError} from './core.mjs';
-import {githubFetch,parseGitRefs} from './github-transport.mjs';
+import {githubFetch,parseGitRefs,parseCommitFeed} from './github-transport.mjs';
+import {normalizeQueryHistory} from './query-model.mjs';
 export {parseRepository, sha256, canonicalJSON};
 
-export const HUB_VERSION='1.1.0';
+export const HUB_VERSION='1.2.0';
 export const SYSTEM_REPOSITORY='https://github.com/1464356758/xiaishuo-ZUOZONG';
 export const STATUS={updated:'已更新',missing:'未更新',pending:'未完成',unknown:'待核实',not_due:'尚未到期',paused:'不参与检查',setup:'待初始化'};
 export class HubError extends ReaderError{}
@@ -37,9 +38,9 @@ export function validateRegistry(value){
     if(b.baseline){fail(Number.isInteger(b.baseline.chapter_count)&&b.baseline.chapter_count>=0&&commitOK(b.baseline.commit),'小说检查基线无效。');baseline={chapter_count:b.baseline.chapter_count,commit:b.baseline.commit,captured_at:String(b.baseline.captured_at||'')};}
     return {id:b.id,book_id:b.book_id,title:b.title.trim(),repository_url:repo.url,branch,enabled:b.enabled,expected_time:b.expected_time,grace_minutes:b.grace_minutes,effective_from:b.effective_from,baseline,...(b.chat_url?{chat_url:validateChatURL(b.chat_url)}:{})};
   });
-  return {schema_version:1,type:value.type,revision:value.revision,timezone:'Asia/Shanghai',updated_at:value.updated_at||null,books,...(value.settings?{settings:{reader_url:value.settings.reader_url?validateReaderURL(value.settings.reader_url):''}}:{})};
+  return {schema_version:1,type:value.type,revision:value.revision,timezone:'Asia/Shanghai',updated_at:value.updated_at||null,books,...(value.settings?{settings:{reader_url:value.settings.reader_url?validateReaderURL(value.settings.reader_url):''}}:{}),...(value.query_history?{query_history:normalizeQueryHistory(value.query_history)}:{})};
 }
-export async function registryFingerprint(registry){return sha256(canonicalJSON(validateRegistry(registry)));}
+export async function registryFingerprint(registry){const {query_history,...value}=validateRegistry(registry);return sha256(canonicalJSON(value));}
 export function validateChatURL(value){
   if(!String(value||'').trim())return '';
   let u;try{u=new URL(String(value).trim());}catch{throw new HubError('GPT 聊天链接无效。');}
@@ -82,15 +83,17 @@ async function responseText(response,maxBytes){
 }
 export class GitHubClient{
   #token='';
-  constructor(repository,{token='',fetcher=githubFetch,timeout=20000}={}){this.repo=parseRepository(repository);this.fetcher=fetcher;this.timeout=timeout;this.#token=String(token).trim();}
+  constructor(repository,{token='',fetcher=githubFetch,timeout=20000,preferGit=fetcher===githubFetch}={}){this.repo=parseRepository(repository);this.fetcher=fetcher;this.timeout=timeout;this.preferGit=preferGit;this.#token=String(token).trim();}
   clearToken(){this.#token='';}
   get canWrite(){return !!this.#token;}
   async request(url,{method='GET',body,maxBytes=4000000,auth=true,accept='application/vnd.github+json'}={}){
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),this.timeout);
     const headers={Accept:accept};
     const isApi=url.startsWith('https://api.github.com/repos/'+encodeURIComponent(this.repo.owner)+'/'+encodeURIComponent(this.repo.name)+'/')||url===this.api('');
-    fail(isApi||url===this.gitURL()||url.startsWith('https://raw.githubusercontent.com/'+encodeURIComponent(this.repo.owner)+'/'+encodeURIComponent(this.repo.name)+'/'),'不允许访问其他服务。');
-    if(isApi&&method==='GET'&&!(auth&&this.#token)&&Date.now()<publicApiRetryAt){clearTimeout(timer);throw new HubError('GitHub 公开接口额度暂时不足，正在使用公开仓库版本通道。','rate_limit');}
+    const historyPrefix='https://github.com/'+encodeURIComponent(this.repo.owner)+'/'+encodeURIComponent(this.repo.name)+'/commits/';
+    const isHistory=url.startsWith(historyPrefix)&&/^[a-f0-9]{40}\/book\/chapters\/CH\d{3,6}_[a-f0-9]{64}\.txt\.atom$/.test(url.slice(historyPrefix.length));
+    fail(isApi||isHistory||url===this.gitURL()||url.startsWith('https://raw.githubusercontent.com/'+encodeURIComponent(this.repo.owner)+'/'+encodeURIComponent(this.repo.name)+'/'),'不允许访问其他服务。');
+    if(isApi&&method==='GET'&&!(auth&&this.#token)&&Date.now()<publicApiRetryAt){clearTimeout(timer);throw new HubError('GitHub 公开接口访问额度暂时不足，请稍后重试。','rate_limit');}
     if(method!=='GET'||(auth&&this.#token))headers['X-GitHub-Api-Version']='2026-03-10';
     if(auth&&isApi&&this.#token)headers.Authorization='Bearer '+this.#token;
     if(body!==undefined)headers['Content-Type']='application/json';
@@ -107,10 +110,12 @@ export class GitHubClient{
   gitURL(){return 'https://github.com/'+encodeURIComponent(this.repo.owner)+'/'+encodeURIComponent(this.repo.name)+'.git/info/refs?service=git-upload-pack';}
   async gitRefs(){let refs;try{refs=parseGitRefs(await this.request(this.gitURL(),{auth:false}));}catch(e){if(e instanceof HubError)throw e;throw new HubError('无法解析公开仓库的提交版本，请稍后重试。','invalid_git_refs');}return refs;}
   async publicInfo(){
+    if(this.preferGit){const git=await this.gitRefs();fail(git.defaultBranch,'无法识别公开仓库默认分支。');return {private:false,full_name:this.repo.owner+'/'+this.repo.name,default_branch:git.defaultBranch};}
     let info;try{info=await this.json('');}catch(e){if(!['network','timeout','rate_limit'].includes(e.code))throw e;const git=await this.gitRefs();fail(git.defaultBranch,'无法识别公开仓库默认分支。');info={private:false,full_name:this.repo.owner+'/'+this.repo.name,default_branch:git.defaultBranch};}
     fail(info.private===false,'当前版本仅支持公开仓库。','private_repo');return info;
   }
   async snapshot(branch=''){
+    if(this.preferGit){safeBranch(branch);const git=await this.gitRefs(),commit=git.refs[branch&&branch!=='HEAD'?'refs/heads/'+branch:'HEAD'];fail(commit,'公开仓库不存在这个分支。','not_found');return {commit,branch:branch||'',committed_at:null};}
     safeBranch(branch);let value;try{value=await this.json('commits/'+encodeURIComponent(branch||'HEAD'));}catch(e){
       if(!['network','timeout','rate_limit'].includes(e.code))throw e;
       const git=await this.gitRefs(),commit=git.refs[branch&&branch!=='HEAD'?'refs/heads/'+branch:'HEAD'];
@@ -123,14 +128,28 @@ export class GitHubClient{
     safePath(path);fail(commitOK(commit),'必须先确定仓库提交版本。');
     const url='https://raw.githubusercontent.com/'+encodeURIComponent(this.repo.owner)+'/'+encodeURIComponent(this.repo.name)+'/'+commit+'/'+path.split('/').map(encodeURIComponent).join('/');
     let text;try{text=await this.request(url,{auth:false});}catch(error){
+      if(this.preferGit)throw error;
       if(!['network','timeout','rate_limit','not_found'].includes(error.code))throw error;
       // Both sources are pinned to the same commit; never mix HEAD files into
       // a verified snapshot. The Contents raw media type also supports >1MB.
-      text=await this.request(this.api('contents/'+path.split('/').map(encodeURIComponent).join('/')+'?ref='+commit),{auth:false,accept:'application/vnd.github.raw+json'});
+      try{text=await this.request(this.api('contents/'+path.split('/').map(encodeURIComponent).join('/')+'?ref='+commit),{auth:false,accept:'application/vnd.github.raw+json'});}catch(alternate){
+        // A real 404 from the primary immutable URL is evidence of absence.
+        // An unavailable alternate must not replace it with a quota error.
+        if(error.code==='not_found'&&['rate_limit','network','timeout'].includes(alternate.code))throw error;
+        if(['network','timeout','rate_limit'].includes(error.code)&&alternate.code==='rate_limit')throw new HubError('文件读取暂时不可用，主要读取和备用读取都未成功，请稍后重试。','network');
+        throw alternate;
+      }
     }return {text,hash:await sha256(text)};
   }
   async readJSON(path,commit){const file=await this.readFile(path,commit);try{return {...file,data:JSON.parse(file.text.replace(/^\uFEFF/,''))};}catch{throw new HubError(path+' 的 JSON 格式无效。');}}
   async optionalJSON(path,commit){try{return await this.readJSON(path,commit);}catch(e){if(e.code==='not_found')return null;throw e;}}
+  async fileHistory(path,commit){
+    safePath(path);fail(commitOK(commit)&&/^book\/chapters\/CH\d{3,6}_[a-f0-9]{64}\.txt$/.test(path),'只能查询正式章节文件的提交日期。');
+    const url='https://github.com/'+encodeURIComponent(this.repo.owner)+'/'+encodeURIComponent(this.repo.name)+'/commits/'+commit+'/'+path+'.atom';
+    const raw=await this.request(url,{auth:false});let history;try{history=parseCommitFeed(raw);}catch(e){throw new HubError(e.message,'invalid_history');}
+    const source=/^tag:github\.com,2008:\/([^/]+)\/([^/]+)\/commits\/([a-f0-9]{40})\/(.+)$/.exec(history.sourceId||'');
+    fail(source&&source[1].toLowerCase()===this.repo.owner.toLowerCase()&&source[2].toLowerCase()===this.repo.name.toLowerCase()&&source[3]===commit&&source[4]===path,'章节日期来源与查询文件不一致。','invalid_history');return history;
+  }
   async putFile(path,content,{branch,expectedHead}={}){
     fail(this.canWrite,'请先授权 GitHub 自动同步。','auth');safePath(path);fail(safeBranch(branch)&&commitOK(expectedHead),'保存分支或版本无效。');
     let previous;try{previous=await this.json('contents/'+path.split('/').map(encodeURIComponent).join('/')+'?ref='+expectedHead);}catch(e){if(e.code!=='not_found')throw e;}
@@ -162,7 +181,7 @@ export async function loadRegistry(client,branch=''){
 export async function saveRegistry(client,draft,{branch,baseFileHash}={}){
   const previous=await loadRegistry(client,branch);fail(previous.fileHash===(baseFileHash??null),'小说清单已被其他操作修改，请先重新读取；本地修改仍然保留。','conflict');
   const desired=validateRegistry(draft);
-  if(!previous.missing&&canonicalJSON({books:desired.books,settings:desired.settings||{}})===canonicalJSON({books:previous.registry.books,settings:previous.registry.settings||{}}))return {...previous,commit:previous.head,observed_commit:previous.head};
+  if(!previous.missing&&canonicalJSON({books:desired.books,settings:desired.settings||{},query_history:desired.query_history||[]})===canonicalJSON({books:previous.registry.books,settings:previous.registry.settings||{},query_history:previous.registry.query_history||[]}))return {...previous,commit:previous.head,observed_commit:previous.head};
   const registry=validateRegistry({...draft,revision:previous.registry.revision+1,updated_at:new Date().toISOString()});
   const text=JSON.stringify(registry,null,2)+'\n';
   const result=await client.putFile('books.json',text,{branch:previous.branch,expectedHead:previous.head});
@@ -254,5 +273,5 @@ export function writingPrompt(entry,management){
 }
 export function repairPrompt(entry){return `恢复 ${entry.repository_url} 的最新正式状态，先读AGENTS.md和docs/每日自动更新.md。检查今天完成回执和book/daily/active.json。已完成就结束；还在运行或状态不明先核实，不并行生成同一章。原执行已确认停止后，使用daily_update.py begin --resume-stopped恢复同一目标，不重置原修订次数，不另起下一章。实际完成检查、采用后finish，重建索引，原子写回并回读。不能以聊天回复替代仓库完成证据。`;}
 export function checkerPrompt(management,branch){
-  return `请为本聊天建立每天北京时间（Asia/Shanghai）20:00执行的总检查定时任务。先确认账号支持及GitHub权限，实际创建成功才报告编号、启用状态和下次执行时间。\n程序来源是通用系统仓库 ${SYSTEM_REPOSITORY}，管理仓库只放名单和报告。先固定通用系统提交，读取docs/管理端与代发端.md及tools/check_updates.mjs、web/dist/hub-core.mjs、web/dist/core.mjs、web/dist/github-transport.mjs，在临时环境保持相对目录执行；不要假定管理仓库里已有这些程序，不将小说或程序复制到管理数据仓库。\n每次执行都读取公开管理仓库 ${management} 的 ${branch||'默认分支'} 最新books.json，不把名单固定在提示词。使用 tools/check_updates.mjs 的同一套核验规则，检查选中的小说；写入reports/日期/执行编号.json和reports/latest.json，快照、报告与latest一起原子提交，保留历史执行。必要时使用GitHub连接器按固定提交收集离线快照，再运行--input模式，不能目测编造updated结果。提交前复核books.json哈希没变化，冲突后重新读取，不强写。报告区分本日有效冻结正文、草稿未完成、未更新、尚未到期、读取失败待核实。只汇总检查，不打开其他小说聊天，不自动代发平台。每本读取失败保留实际错误，不清零历史，不把改配置、旧回执或昨日补更算今天。若额度或授权失效，明确失败，不宣称报告已写回。`;
+  return `可选：请在本聊天建立每天北京时间20:00执行的查询任务；必须实际创建成功才报告启用状态和下次运行时间。\n每次读取 ${management} 的 ${branch||'默认分支'} 最新books.json，查询所有enabled=true的小说，不受expected_time、effective_from或宽限时间限制。按最新正式章节文件的最近一次Git提交日期（Asia/Shanghai）判断今天是否更新；只有改配置、改报告不能算更新。读取失败标unknown，不能算未更新。\n程序位于通用系统仓库 ${SYSTEM_REPOSITORY}。固定其提交后下载tools/query_today.mjs及web/dist/today-query.mjs、query-model.mjs、hub-core.mjs、core.mjs、github-transport.mjs，保留相对目录。程序只读模式不需要GPT API Key；公开查询正常路径使用Git版本发现、公开原文和章节文件历史，不依赖匿名REST调用。\n运行node tools/query_today.mjs --management ${management} --branch ${branch||'main'} --output /tmp/today-result.json。已有正确GitHub管理仓库写入授权时可用--write及仅在环境内的NOVEL_HUB_GITHUB_TOKEN，把最近7天查询观察保存到books.json；仅有GitHub连接器时按相同规则读取真实章节日期，原子比较books.json版本并写回query_history。保存前核对文件版本，冲突不覆盖。未实际写回并回读成功不能宣称已记录。不得打开别的小说聊天、代写下一章或到小说平台发布。`;
 }

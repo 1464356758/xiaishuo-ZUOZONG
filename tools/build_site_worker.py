@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def build(root=ROOT, out=None, partner=False):
     root = Path(root).resolve()
     dist = root / "web/dist"
-    names = ["reader.html", "reader.js", "hub-core.mjs", "core.mjs", "github-transport.mjs", "ui.mjs", "hub.css", "icon.svg"] if partner else [p.name for p in sorted(dist.iterdir()) if p.is_file() and p.suffix in (".html", ".js", ".mjs", ".css", ".svg", ".webmanifest")]
+    names = ["reader.html", "reader.js", "hub-core.mjs", "core.mjs", "github-transport.mjs", "query-model.mjs", "ui.mjs", "hub.css", "icon.svg"] if partner else [p.name for p in sorted(dist.iterdir()) if p.is_file() and p.suffix in (".html", ".js", ".mjs", ".css", ".svg", ".webmanifest")]
     types = {".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json"}
     assets = {}
     for name in names:

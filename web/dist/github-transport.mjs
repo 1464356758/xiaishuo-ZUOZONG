@@ -44,3 +44,12 @@ export function parseGitRefs(text){
   if(!refs.HEAD)throw new Error('公开仓库尚无可读取提交');
   return {refs,defaultBranch};
 }
+
+export function parseCommitFeed(text){
+  if(typeof text!=='string'||text.includes('<!DOCTYPE')||!/<feed\b/.test(text))throw new Error('章节文件历史格式无效。');
+  const start=text.search(/<entry\b/),prefix=start<0?text:text.slice(0,start),sourceId=/<id>\s*([^<]+)\s*<\/id>/.exec(prefix)?.[1]?.trim();
+  const entry=/<entry\b[^>]*>([\s\S]*?)<\/entry>/.exec(text)?.[1];if(!entry)throw new Error('章节文件没有可读取的提交记录。');
+  const commit=/<id>\s*tag:github\.com,2008:Grit::Commit\/([a-f0-9]{40})\s*<\/id>/.exec(entry)?.[1],date=/<updated>\s*([^<]+)\s*<\/updated>/.exec(entry)?.[1]?.trim();
+  if(!commit||!date||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(date)||!Number.isFinite(Date.parse(date)))throw new Error('章节提交日期无效。');
+  return {commit,date,sourceId};
+}

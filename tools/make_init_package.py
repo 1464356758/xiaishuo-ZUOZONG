@@ -10,7 +10,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def build(root=ROOT,out=None):
     root=Path(root).resolve();out=Path(out or root/'初始化系统包.zip').resolve()
-    names=['AGENTS.md','README.md','启动新书.txt','每日一章指令.txt','docs/连载冻结与发布前检查.md','docs/写作与叙事检查.md','docs/专项技法.md','docs/每日自动更新.md','docs/旧书接入工作台.md','docs/管理端与代发端.md','docs/网页部署与首次使用.md','docs/工作台1.1交互与同步.md','执行规程.md','工具使用与数据格式.md','平台研究与选题.md','system_config.json','platforms.json','.gitignore','docs/线上同步协议.md','docs/正文直接读取.md','docs/私密稿保存.md','requirements-private.txt']
+    names=['AGENTS.md','README.md','启动新书.txt','每日一章指令.txt','docs/连载冻结与发布前检查.md','docs/写作与叙事检查.md','docs/专项技法.md','docs/每日自动更新.md','docs/旧书接入工作台.md','docs/管理端与代发端.md','docs/网页部署与首次使用.md','docs/工作台1.1交互与同步.md','docs/今日更新查询.md','执行规程.md','工具使用与数据格式.md','平台研究与选题.md','system_config.json','platforms.json','.gitignore','docs/线上同步协议.md','docs/正文直接读取.md','docs/私密稿保存.md','requirements-private.txt']
     files={name:(root/name).read_bytes() for name in names}
     for folder in ('tools','templates','tests'):
         for path in sorted((root/folder).glob('*')):

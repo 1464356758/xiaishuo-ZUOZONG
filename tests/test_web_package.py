@@ -22,6 +22,7 @@ class PackageTests(unittest.TestCase):
                 self.assertIn("legacy.html", z.namelist())
                 self.assertIn(b"hub.js", z.read("index.html"))
                 self.assertIn("github-transport.mjs", z.namelist())
+                self.assertIn("query-model.mjs", z.namelist())
                 self.assertIn("netlify/functions/github.mjs", z.namelist())
             with zipfile.ZipFile(result["partner"]["path"]) as z:
                 self.assertIn(b"reader.js", z.read("index.html"))
@@ -29,6 +30,7 @@ class PackageTests(unittest.TestCase):
                 self.assertNotIn("legacy.html", z.namelist())
                 self.assertIn("hub-core.mjs", z.namelist())
                 self.assertIn("github-transport.mjs", z.namelist())
+                self.assertIn("query-model.mjs", z.namelist())
                 self.assertIn(b"allowWrites:false", z.read("netlify/functions/github.mjs"))
                 self.assertFalse(any(name.startswith("book/") or name.startswith("qa-") for name in z.namelist()))
 
@@ -47,13 +49,15 @@ class PackageTests(unittest.TestCase):
             out = Path(tmp) / "init.zip"
             initial.build(ROOT, out)
             with zipfile.ZipFile(out) as z:
-                for name in ("tools/check_updates.mjs", "tools/daily_update.py", "web/dist/hub-core.mjs", "web/dist/core.mjs", "web/dist/github-transport.mjs", "web/server/github-relay.mjs", "docs/每日自动更新.md", "docs/旧书接入工作台.md"):
+                for name in ("tools/check_updates.mjs", "tools/query_today.mjs", "web/dist/today-query.mjs", "web/dist/query-model.mjs", "tools/daily_update.py", "web/dist/hub-core.mjs", "web/dist/core.mjs", "web/dist/github-transport.mjs", "web/server/github-relay.mjs", "docs/每日自动更新.md", "docs/旧书接入工作台.md"):
                     self.assertIn(name, z.namelist())
                 self.assertNotIn("book/daily/active.json", z.namelist())
                 z.extractall(Path(tmp) / "extracted")
             import shutil
             if shutil.which("node"):
                 run = subprocess.run(["node", "tools/check_updates.mjs", "--help"], cwd=Path(tmp) / "extracted", capture_output=True, text=True)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                run = subprocess.run(["node", "tools/query_today.mjs", "--help"], cwd=Path(tmp) / "extracted", capture_output=True, text=True)
                 self.assertEqual(run.returncode, 0, run.stderr)
 
     def test_site_worker_serves_both_real_entries_and_the_relay_health(self):
@@ -65,7 +69,7 @@ class PackageTests(unittest.TestCase):
             if shutil.which("node"):
                 script = """import assert from 'node:assert/strict';
 const {default:worker}=await import(process.argv[1]);
-for(const path of ['/', '/reader.html', '/github-transport.mjs']){const r=await worker.fetch(new Request('https://novel.example'+path));assert.equal(r.status,200);if(path.endsWith('.html')||path==='/')assert.match(await r.text(),/novel-github-transport/);}
+for(const path of ['/', '/reader.html', '/github-transport.mjs', '/query-model.mjs', '/today-query.mjs']){const r=await worker.fetch(new Request('https://novel.example'+path));assert.equal(r.status,200);if(path.endsWith('.html')||path==='/')assert.match(await r.text(),/novel-github-transport/);}
 const h=await worker.fetch(new Request('https://novel.example/api/github?health=1'));assert.equal((await h.json()).protocol,1);
 assert.equal((await worker.fetch(new Request('https://novel.example/unknown'))).status,404);
 """

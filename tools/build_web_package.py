@@ -12,7 +12,7 @@ HEADERS = "/*\n  Referrer-Policy: no-referrer\n  X-Content-Type-Options: nosniff
 
 
 def archive(out, files, kind):
-    manifest = {"format": "novel-workspace-package-v1", "package": kind, "version": "1.1.0", "contains_novel_data": False,
+    manifest = {"format": "novel-workspace-package-v1", "package": kind, "version": "1.2.0", "contains_novel_data": False,
                 "files": {name: hashlib.sha256(body).hexdigest() for name, body in files.items()}}
     files = dict(files, **{"PACKAGE_MANIFEST.json": (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode()})
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
@@ -36,14 +36,14 @@ def build(root=ROOT, out_dir=None):
     owner.update(common)
     owner["netlify/functions/github.mjs"] = (relay + '\nexport default request=>handleGitHubRelay(request);\n').encode()
     owner["部署说明.txt"] = (root / "docs/网页部署与首次使用.md").read_bytes()
-    partner_names = ["reader.html", "reader.js", "hub-core.mjs", "core.mjs", "github-transport.mjs", "ui.mjs", "hub.css", "icon.svg"]
+    partner_names = ["reader.html", "reader.js", "hub-core.mjs", "core.mjs", "github-transport.mjs", "query-model.mjs", "ui.mjs", "hub.css", "icon.svg"]
     partner = {name: (dist / name).read_bytes() for name in partner_names}
     partner["index.html"] = partner["reader.html"]
     partner.update(common)
     partner["netlify/functions/github.mjs"] = (relay + '\nexport default request=>handleGitHubRelay(request,{allowWrites:false});\n').encode()
-    partner["部署说明.txt"] = "根目录和reader.html均为代发阅读页。作者在个人端保存此站的reader.html网址，再生成代发链接。无需GitHub写入凭证。代发码不是保密措施。\nNetlify使用Git连接部署或支持函数的CLI部署，让netlify/functions/github.mjs随站点部署。仅拖拽静态文件不会启用函数；这种方式仍需浏览器可直连GitHub。详见个人端部署说明。\n".encode()
+    partner["部署说明.txt"] = "根目录和reader.html均为代发阅读页。作者在个人端保存此站的reader.html网址，再生成代发链接。无需GitHub写入凭证。代发码不是保密措施。\nNetlify使用Git连接部署或支持函数的CLI部署，让netlify/functions/github.mjs随站点部署。仅拖拽静态文件不会启用函数；请连同函数部署，避免Git版本读取受到浏览器跨域限制。详见个人端部署说明。\n".encode()
     manager = {"books.json": (root / "templates/管理清单.json").read_bytes(),
-               "README.md": "# 小说更新管理仓库\n\n本包只有空清单，没有小说正文或凭证。上传到独立公开仓库并产生初始提交后，在个人端连接此仓库。小说清单由个人端保存，报告由总检查GPT写入。\n".encode()}
+               "README.md": "# 小说更新管理仓库\n\n本包只有空清单，没有小说正文或凭证。上传到独立公开仓库并产生初始提交后，在个人端连接此仓库。小说清单与最近7天查询记录由个人端保存；查询无需预先生成报告。\n".encode()}
     return {"owner": archive(out / "个人管理端部署包.zip", owner, "owner"),
             "partner": archive(out / "代发端部署包.zip", partner, "partner"),
             "management": archive(out / "管理仓库初始化包.zip", manager, "management")}

@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "type": "novel-hub-registry-v1",
-  "revision": 1,
+  "revision": 2,
   "timezone": "Asia/Shanghai",
-  "updated_at": "2026-10-26T16:04:33.784Z",
+  "updated_at": "2026-10-26T16:54:52.480Z",
   "books": [
     {
       "id": "novel_xiaoshuov4",
@@ -24,5 +24,25 @@
   ],
   "settings": {
     "reader_url": "https://novel-workspace-v44.qq1464356758.chatgpt.site/reader.html"
-  }
+  },
+  "query_history": [
+    {
+      "date": "2026-10-27",
+      "checked_at": "2026-10-26T16:54:52.480Z",
+      "selection_fingerprint": "f5c752bd42586ef7696e55fa5dc66ba11e9a7349b48a1d0ff0c2fabbcf9d1e3c",
+      "observations": [
+        {
+          "id": "novel_xiaoshuov4",
+          "book_id": "f3626289-6903-436a-a009-eeee8a209510",
+          "status": "not_updated",
+          "chapter": 22,
+          "body_sha256": "3464f3f9edd25a836e1b8ad95085d41a079fcd9c848031f0b5ba8262b69ecbf8",
+          "repository_commit": "e605aaec2a5c2dde1c854e9ee2636f49cef0a058",
+          "change_commit": "3ecd035b564e38c10159351c52b31cd515ea7862",
+          "latest_change_at": "2026-10-24T00:31:56Z",
+          "last_successful_at": "2026-10-26T16:54:52.480Z"
+        }
+      ]
+    }
+  ]
 }

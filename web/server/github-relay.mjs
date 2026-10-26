@@ -23,7 +23,10 @@ function targetURL(value,method){
   const parts=u.pathname.split('/').slice(1).map(p=>{try{return decodeURIComponent(p);}catch{throw new RelayError(400,'invalid_target');}});
   const identifier=s=>typeof s==='string'&&/^[A-Za-z0-9_.-]+$/.test(s)&&s!=='.'&&s!=='..';
   check(identifier(parts[api?1:0])&&identifier(parts[api?2:1]),400,'invalid_target');
-  if(git){check(method==='GET'&&parts.length===4&&parts[1].endsWith('.git')&&parts[2]==='info'&&parts[3]==='refs'&&u.search==='?service=git-upload-pack',400,'invalid_target');return {u,raw:true,git:true};}
+  if(git){
+    if(parts[2]==='commits'){check(method==='GET'&&!u.search&&parts.length===7&&/^[a-f0-9]{40}$/.test(parts[3])&&parts[4]==='book'&&parts[5]==='chapters'&&/^CH\d{3,6}_[a-f0-9]{64}\.txt\.atom$/.test(parts[6]),400,'invalid_target');return {u,raw:true,history:true};}
+    check(method==='GET'&&parts.length===4&&parts[1].endsWith('.git')&&parts[2]==='info'&&parts[3]==='refs'&&u.search==='?service=git-upload-pack',400,'invalid_target');return {u,raw:true,git:true};
+  }
   if(raw){check(method==='GET'&&!u.search&&/^[a-f0-9]{40}$/.test(parts[2])&&parts.length>3,400,'invalid_target');check(parts.slice(3).every(p=>p&&p!=='.'&&p!=='..'&&!/[\\\x00-\x1f]/.test(p)),400,'invalid_target');return {u,raw:true};}
   check(parts[0]==='repos',400,'invalid_target');
   const path=parts.slice(3).join('/');
@@ -54,7 +57,7 @@ export async function handleGitHubRelay(request,{fetcher=globalThis.fetch,allowW
     check(request.headers.get('sec-fetch-site')!=='cross-site',403,'origin_not_allowed');
     if(own.searchParams.get('health')==='1'&&!own.searchParams.has('target')){check(request.method==='GET',405,'method_not_allowed');return reply(JSON.stringify({service:RELAY,protocol:1,write:allowWrites}));}
     check([...own.searchParams.keys()].every(k=>k==='target')&&own.searchParams.getAll('target').length===1);
-    const method=request.method,{u,raw,path}=targetURL(own.searchParams.get('target'),method);
+    const method=request.method,{u,raw,path,history}=targetURL(own.searchParams.get('target'),method);
     const controller=new AbortController();timer=setTimeout(()=>controller.abort(),15000);
     const headers={Accept:request.headers.get('accept')==='application/vnd.github.raw+json'?'application/vnd.github.raw+json':'application/vnd.github+json','User-Agent':'Novel-Workspace/1.0.1'};
     let body;
@@ -70,7 +73,7 @@ export async function handleGitHubRelay(request,{fetcher=globalThis.fetch,allowW
     if(method==='GET'&&!raw&&request.headers.has('authorization')){
       const authorization=request.headers.get('authorization');check(/^Bearer [A-Za-z0-9_\-.]{10,300}$/.test(authorization),401,'auth_required');headers.Authorization=authorization;headers['X-GitHub-Api-Version']='2026-03-10';
     }
-    const upstream=await fetcher(u.href,{method,headers:raw?{'User-Agent':headers['User-Agent']}:headers,body,signal:controller.signal,redirect:'manual',credentials:'omit',cache:'no-store'});
+    const upstream=await fetcher(u.href,{method,headers:raw?{'User-Agent':headers['User-Agent'],...(history?{Accept:'application/atom+xml'}:{})}:headers,body,signal:controller.signal,redirect:'manual',credentials:'omit',cache:'no-store'});
     if(upstream.status>=300&&upstream.status<400){upstream.body?.cancel();return errorReply(502,'upstream_redirect');}
     if(!upstream.ok){upstream.body?.cancel();const h={};for(const k of ['retry-after','x-ratelimit-remaining','x-ratelimit-reset'])if(upstream.headers.has(k))h[k]=upstream.headers.get(k);const code=upstream.status===404?'not_found':upstream.status===401?'auth':upstream.status===403||upstream.status===429?'rate_limit':upstream.status===409||upstream.status===422?'conflict':'upstream_error';return reply(JSON.stringify({error:code}),upstream.status,undefined,{'X-Novel-Error':code,...h});}
     const text=await limitedText(upstream,LIMIT);

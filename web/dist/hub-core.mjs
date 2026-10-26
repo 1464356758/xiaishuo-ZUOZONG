@@ -2,7 +2,7 @@ import {parseRepository, validateManifest, sha256, canonicalJSON, ReaderError} f
 import {githubFetch,parseGitRefs} from './github-transport.mjs';
 export {parseRepository, sha256, canonicalJSON};
 
-export const HUB_VERSION='1.0.1';
+export const HUB_VERSION='1.1.0';
 export const SYSTEM_REPOSITORY='https://github.com/1464356758/xiaishuo-ZUOZONG';
 export const STATUS={updated:'已更新',missing:'未更新',pending:'未完成',unknown:'待核实',not_due:'尚未到期',paused:'不参与检查',setup:'待初始化'};
 export class HubError extends ReaderError{}
@@ -35,9 +35,9 @@ export function validateRegistry(value){
     fail(/^([01]\d|2[0-3]):[0-5]\d$/.test(b.expected_time)&&Number.isInteger(b.grace_minutes)&&b.grace_minutes>=0&&b.grace_minutes<=360&&validDay(b.effective_from),'计划时间或起算日期无效。');
     let baseline=null;
     if(b.baseline){fail(Number.isInteger(b.baseline.chapter_count)&&b.baseline.chapter_count>=0&&commitOK(b.baseline.commit),'小说检查基线无效。');baseline={chapter_count:b.baseline.chapter_count,commit:b.baseline.commit,captured_at:String(b.baseline.captured_at||'')};}
-    return {id:b.id,book_id:b.book_id,title:b.title.trim(),repository_url:repo.url,branch,enabled:b.enabled,expected_time:b.expected_time,grace_minutes:b.grace_minutes,effective_from:b.effective_from,baseline};
+    return {id:b.id,book_id:b.book_id,title:b.title.trim(),repository_url:repo.url,branch,enabled:b.enabled,expected_time:b.expected_time,grace_minutes:b.grace_minutes,effective_from:b.effective_from,baseline,...(b.chat_url?{chat_url:validateChatURL(b.chat_url)}:{})};
   });
-  return {schema_version:1,type:value.type,revision:value.revision,timezone:'Asia/Shanghai',updated_at:value.updated_at||null,books};
+  return {schema_version:1,type:value.type,revision:value.revision,timezone:'Asia/Shanghai',updated_at:value.updated_at||null,books,...(value.settings?{settings:{reader_url:value.settings.reader_url?validateReaderURL(value.settings.reader_url):''}}:{})};
 }
 export async function registryFingerprint(registry){return sha256(canonicalJSON(validateRegistry(registry)));}
 export function validateChatURL(value){
@@ -53,8 +53,8 @@ export function validateLocalBackup(value){
   fail(value?.type==='novel-hub-local-backup-v1','不是本软件的本机备份。');
   const registry=validateRegistry(value.registry),config=value.config?.repository_url?{repository_url:parseRepository(value.config.repository_url).url,branch:safeBranch(value.config.branch||'')}:{};
   const chats={};for(const [id,url] of Object.entries(value.chats||{})){fail(/^[A-Za-z0-9_-]{1,100}$/.test(id),'备份聊天编号无效。');chats[id]=validateChatURL(url);}
-  fail(Array.isArray(value.ledger)&&value.ledger.length<=10000,'备份收益记录过多或格式无效。');
-  const ledger=value.ledger.map(x=>{fail(x&&typeof x.id==='string'&&typeof x.book_id==='string'&&typeof x.title==='string'&&x.title.length<=300&&validDay(x.date)&&['income','expense','minutes'].every(k=>Number.isFinite(x[k])&&x[k]>=0&&x[k]<=100000000),'备份投入收益记录无效。');return {id:x.id,book_id:x.book_id,title:x.title,date:x.date,income:x.income,expense:x.expense,minutes:x.minutes,note:String(x.note||'').slice(0,300)};});
+  fail(Array.isArray(value.ledger||[])&&(value.ledger||[]).length<=10000,'旧备份记录过多或格式无效。');
+  const ledger=[];
   return {registry,config,chats,ledger,reader_url:value.reader_url?validateReaderURL(value.reader_url):''};
 }
 const to64=bytes=>{let s='';for(const x of bytes)s+=String.fromCharCode(x);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');};
@@ -97,7 +97,7 @@ export class GitHubClient{
     try{
       const response=await this.fetcher(url,{method,headers:isApi?headers:{},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal,cache:'no-store',credentials:'omit',redirect:'error',referrerPolicy:'no-referrer'});
       if(isApi&&response.headers.get('x-ratelimit-remaining')==='0'){const reset=Number(response.headers.get('x-ratelimit-reset'))*1000;if(Number.isFinite(reset)&&reset>Date.now())publicApiRetryAt=Math.min(reset,Date.now()+3600000);}
-      if(!response.ok){const status=response.status,relay=response.headers.get('x-novel-error');if(status===404)throw new HubError('文件或仓库不存在，请确认仓库公开、路径和分支正确。','not_found');if(status===409||status===422)throw new HubError('远端版本有变化，先重新读取后再保存。','conflict');if(status===401)throw new HubError('GitHub 凭证无效或已过期。','auth');if(status===403||status===429)throw new HubError('GitHub 权限不足或访问受限，请检查授权及限流情况。','rate_limit');if(status===413)throw new HubError('文件超过读取上限。','too_large');if(relay==='upstream_timeout')throw new HubError('网站连接 GitHub 超时，请稍后重试。','timeout');if(relay==='upstream_network')throw new HubError('网站暂时无法连接 GitHub，请稍后重试。','network');throw new HubError('GitHub 访问失败（'+status+'）。','network');}
+      if(!response.ok){const status=response.status,relay=response.headers.get('x-novel-error');if(status===404)throw new HubError('文件或仓库不存在，请确认仓库公开、路径和分支正确。','not_found');if(status===409||status===422)throw new HubError('远端版本有变化，先重新读取后再保存。','conflict');if(status===401){if(method==='GET'&&auth&&this.#token){response.body?.cancel();return await this.request(url,{method,body,maxBytes,auth:false,accept});}throw new HubError('GitHub 凭证无效或已过期，请重新授权自动保存。','auth');}if(status===403||status===429)throw new HubError('GitHub 权限不足或访问受限，请检查授权及限流情况。','rate_limit');if(status===413)throw new HubError('文件超过读取上限。','too_large');if(relay==='upstream_timeout')throw new HubError('网站连接 GitHub 超时，请稍后重试。','timeout');if(relay==='upstream_network')throw new HubError('网站暂时无法连接 GitHub，请稍后重试。','network');throw new HubError('GitHub 访问失败（'+status+'）。','network');}
       return await responseText(response,maxBytes);
     }catch(error){if(error instanceof HubError)throw error;if(error.name==='AbortError')throw new HubError('读取仓库超时，请稍后重新核验。','timeout');throw new HubError('仓库连接失败：当前站点的 GitHub 读取通道不可用，请稍后重试。','network');}
     finally{clearTimeout(timer);}
@@ -131,6 +131,16 @@ export class GitHubClient{
   }
   async readJSON(path,commit){const file=await this.readFile(path,commit);try{return {...file,data:JSON.parse(file.text.replace(/^\uFEFF/,''))};}catch{throw new HubError(path+' 的 JSON 格式无效。');}}
   async optionalJSON(path,commit){try{return await this.readJSON(path,commit);}catch(e){if(e.code==='not_found')return null;throw e;}}
+  async putFile(path,content,{branch,expectedHead}={}){
+    fail(this.canWrite,'请先授权 GitHub 自动同步。','auth');safePath(path);fail(safeBranch(branch)&&commitOK(expectedHead),'保存分支或版本无效。');
+    let previous;try{previous=await this.json('contents/'+path.split('/').map(encodeURIComponent).join('/')+'?ref='+expectedHead);}catch(e){if(e.code!=='not_found')throw e;}
+    if(previous)fail(previous.type==='file'&&commitOK(previous.sha),'远端文件版本无效。');
+    const bytes=new TextEncoder().encode(content);let encoded='';for(const byte of bytes)encoded+=String.fromCharCode(byte);
+    const result=await this.json('contents/'+path.split('/').map(encodeURIComponent).join('/'),{method:'PUT',body:{message:'Save novel workspace',branch,content:btoa(encoded),...(previous?{sha:previous.sha}:{})}});
+    fail(commitOK(result.commit?.sha),'GitHub 未返回已保存版本。','uncertain_write');
+    const file=await this.readFile(path,result.commit.sha);fail(file.text===content,'保存后的文件尚未核对成功，请重试同步。','uncertain_write');
+    return {commit:result.commit.sha,observed_commit:result.commit.sha};
+  }
   async writeFiles(files,{expectedHead,branch}={}){
     fail(this.canWrite,'请先在设置中临时填写 GitHub 写入凭证。','auth');fail(commitOK(expectedHead)&&safeBranch(branch),'写入前必须确认分支及版本。');
     const current=await this.snapshot(branch);fail(current.commit===expectedHead,'保存前远端已变化，请重新读取。','conflict');
@@ -151,9 +161,11 @@ export async function loadRegistry(client,branch=''){
 }
 export async function saveRegistry(client,draft,{branch,baseFileHash}={}){
   const previous=await loadRegistry(client,branch);fail(previous.fileHash===(baseFileHash??null),'小说清单已被其他操作修改，请先重新读取；本地修改仍然保留。','conflict');
+  const desired=validateRegistry(draft);
+  if(!previous.missing&&canonicalJSON({books:desired.books,settings:desired.settings||{}})===canonicalJSON({books:previous.registry.books,settings:previous.registry.settings||{}}))return {...previous,commit:previous.head,observed_commit:previous.head};
   const registry=validateRegistry({...draft,revision:previous.registry.revision+1,updated_at:new Date().toISOString()});
   const text=JSON.stringify(registry,null,2)+'\n';
-  const result=await client.writeFiles({'books.json':text},{branch:previous.branch,expectedHead:previous.head});
+  const result=await client.putFile('books.json',text,{branch:previous.branch,expectedHead:previous.head});
   return {...result,registry,fileHash:await sha256(text),branch:previous.branch};
 }
 export function validateReport(report){

@@ -1,5 +1,16 @@
 name: Validate novel workspace
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    paths-ignore:
+      - 'books.json'
+      - 'reports/**'
+      - 'snapshots/**'
+  pull_request:
+    paths-ignore:
+      - 'books.json'
+      - 'reports/**'
+      - 'snapshots/**'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

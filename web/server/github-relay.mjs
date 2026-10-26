@@ -33,13 +33,14 @@ function targetURL(value,method){
     const keys=path==='commits'?['path','per_page','sha']:path.startsWith('contents/')?['ref']:[];
     for(const [k,v] of u.searchParams){check(keys.includes(k)&&u.searchParams.getAll(k).length===1&&v.length<=500,400,'invalid_target');if(k==='per_page')check(/^[1-9]\d?$/.test(v),400,'invalid_target');if(k==='ref')check(/^[a-f0-9]{40}$/.test(v),400,'invalid_target');}
   }else{
-    check(!u.search&&((method==='POST'&&['git/blobs','git/trees','git/commits'].includes(path))||(method==='PATCH'&&/^git\/refs\/heads\/[A-Za-z0-9_][A-Za-z0-9_.\/-]*$/.test(path)&&!path.includes('..'))),405,'method_not_allowed');
+    check(!u.search&&((method==='PUT'&&path==='contents/books.json')||(method==='POST'&&['git/blobs','git/trees','git/commits'].includes(path))||(method==='PATCH'&&/^git\/refs\/heads\/[A-Za-z0-9_][A-Za-z0-9_.\/-]*$/.test(path)&&!path.includes('..'))),405,'method_not_allowed');
   }
   return {u,raw:false,path};
 }
 function validateWrite(path,body){
   check(body&&typeof body==='object'&&!Array.isArray(body));
   const sha=s=>typeof s==='string'&&/^[a-f0-9]{40}$/.test(s);
+  if(path==='contents/books.json')check(typeof body.content==='string'&&/^[A-Za-z0-9+/]*={0,2}$/.test(body.content)&&typeof body.message==='string'&&typeof body.branch==='string'&&/^[A-Za-z0-9_][A-Za-z0-9_.\/-]*$/.test(body.branch)&&!body.branch.includes('..')&&(body.sha===undefined||sha(body.sha)),400,'invalid_write_scope');
   if(path==='git/blobs')check(body.encoding==='utf-8'&&typeof body.content==='string');
   if(path==='git/trees')check(sha(body.base_tree)&&Array.isArray(body.tree)&&body.tree.length===1&&body.tree.every(x=>x.path==='books.json'&&x.mode==='100644'&&x.type==='blob'&&sha(x.sha)),400,'invalid_write_scope');
   if(path==='git/commits')check(sha(body.tree)&&Array.isArray(body.parents)&&body.parents.length===1&&sha(body.parents[0])&&typeof body.message==='string');

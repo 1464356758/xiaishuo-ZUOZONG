@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "type": "novel-hub-registry-v1",
+  "revision": 1,
+  "timezone": "Asia/Shanghai",
+  "updated_at": "2026-10-26T16:04:33.784Z",
+  "books": [
+    {
+      "id": "novel_xiaoshuov4",
+      "book_id": "f3626289-6903-436a-a009-eeee8a209510",
+      "title": "我还没死，三千年后的盗墓贼先找上门了",
+      "repository_url": "https://github.com/1464356758/XIAOSHUOv4",
+      "branch": "",
+      "enabled": true,
+      "expected_time": "09:00",
+      "grace_minutes": 60,
+      "effective_from": "2026-10-27",
+      "baseline": {
+        "chapter_count": 22,
+        "commit": "e605aaec2a5c2dde1c854e9ee2636f49cef0a058",
+        "captured_at": "2026-10-26T16:04:33.784Z"
+      }
+    }
+  ],
+  "settings": {
+    "reader_url": "https://novel-workspace-v44.qq1464356758.chatgpt.site/reader.html"
+  }
+}

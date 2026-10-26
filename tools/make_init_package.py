@@ -17,7 +17,7 @@ def build(root=ROOT,out=None):
             if path.is_file() and path.suffix in ('.py','.mjs','.json','.md','.txt'):
                 files[path.relative_to(root).as_posix()]=path.read_bytes()
     # 定时巡检工具与网页共用规则，离线包必须包含其实际依赖。
-    for folder in ('web/dist','web/tests'):
+    for folder in ('web/dist','web/tests','web/server'):
         for path in sorted((root/folder).glob('*')):
             if path.is_file() and path.suffix in ('.html','.js','.mjs','.css','.svg','.webmanifest'):
                 files[path.relative_to(root).as_posix()]=path.read_bytes()

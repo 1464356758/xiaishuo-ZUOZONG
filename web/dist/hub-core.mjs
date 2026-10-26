@@ -1,10 +1,12 @@
 import {parseRepository, validateManifest, sha256, canonicalJSON, ReaderError} from './core.mjs';
+import {githubFetch,parseGitRefs} from './github-transport.mjs';
 export {parseRepository, sha256, canonicalJSON};
 
-export const HUB_VERSION='1.0.0';
+export const HUB_VERSION='1.0.1';
 export const SYSTEM_REPOSITORY='https://github.com/1464356758/xiaishuo-ZUOZONG';
 export const STATUS={updated:'已更新',missing:'未更新',pending:'未完成',unknown:'待核实',not_due:'尚未到期',paused:'不参与检查',setup:'待初始化'};
 export class HubError extends ReaderError{}
+let publicApiRetryAt=0;
 const fail=(condition,message,code='invalid_data')=>{if(!condition)throw new HubError(message,code);};
 const hashOK=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);
 const commitOK=x=>typeof x==='string'&&/^[a-f0-9]{40}$/.test(x);
@@ -80,36 +82,52 @@ async function responseText(response,maxBytes){
 }
 export class GitHubClient{
   #token='';
-  constructor(repository,{token='',fetcher=globalThis.fetch,timeout=20000}={}){this.repo=parseRepository(repository);this.fetcher=fetcher;this.timeout=timeout;this.#token=String(token).trim();}
+  constructor(repository,{token='',fetcher=githubFetch,timeout=20000}={}){this.repo=parseRepository(repository);this.fetcher=fetcher;this.timeout=timeout;this.#token=String(token).trim();}
   clearToken(){this.#token='';}
   get canWrite(){return !!this.#token;}
-  async request(url,{method='GET',body,maxBytes=4000000,auth=true}={}){
+  async request(url,{method='GET',body,maxBytes=4000000,auth=true,accept='application/vnd.github+json'}={}){
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),this.timeout);
-    const headers={Accept:'application/vnd.github+json'};
+    const headers={Accept:accept};
     const isApi=url.startsWith('https://api.github.com/repos/'+encodeURIComponent(this.repo.owner)+'/'+encodeURIComponent(this.repo.name)+'/')||url===this.api('');
-    fail(isApi||url.startsWith('https://raw.githubusercontent.com/'+encodeURIComponent(this.repo.owner)+'/'+encodeURIComponent(this.repo.name)+'/'),'不允许访问其他服务。');
+    fail(isApi||url===this.gitURL()||url.startsWith('https://raw.githubusercontent.com/'+encodeURIComponent(this.repo.owner)+'/'+encodeURIComponent(this.repo.name)+'/'),'不允许访问其他服务。');
+    if(isApi&&method==='GET'&&!(auth&&this.#token)&&Date.now()<publicApiRetryAt){clearTimeout(timer);throw new HubError('GitHub 公开接口额度暂时不足，正在使用公开仓库版本通道。','rate_limit');}
     if(method!=='GET'||(auth&&this.#token))headers['X-GitHub-Api-Version']='2026-03-10';
     if(auth&&isApi&&this.#token)headers.Authorization='Bearer '+this.#token;
     if(body!==undefined)headers['Content-Type']='application/json';
     try{
       const response=await this.fetcher(url,{method,headers:isApi?headers:{},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal,cache:'no-store',credentials:'omit',redirect:'error',referrerPolicy:'no-referrer'});
-      if(!response.ok){const status=response.status;if(status===404)throw new HubError('文件或仓库不存在，请确认仓库公开、路径和分支正确。','not_found');if(status===409||status===422)throw new HubError('远端版本有变化，先重新读取后再保存。','conflict');if(status===401)throw new HubError('GitHub 凭证无效或已过期。','auth');if(status===403||status===429)throw new HubError('GitHub 权限不足或访问受限，请检查授权及限流情况。','rate_limit');throw new HubError('GitHub 访问失败（'+status+'）。','network');}
+      if(isApi&&response.headers.get('x-ratelimit-remaining')==='0'){const reset=Number(response.headers.get('x-ratelimit-reset'))*1000;if(Number.isFinite(reset)&&reset>Date.now())publicApiRetryAt=Math.min(reset,Date.now()+3600000);}
+      if(!response.ok){const status=response.status,relay=response.headers.get('x-novel-error');if(status===404)throw new HubError('文件或仓库不存在，请确认仓库公开、路径和分支正确。','not_found');if(status===409||status===422)throw new HubError('远端版本有变化，先重新读取后再保存。','conflict');if(status===401)throw new HubError('GitHub 凭证无效或已过期。','auth');if(status===403||status===429)throw new HubError('GitHub 权限不足或访问受限，请检查授权及限流情况。','rate_limit');if(status===413)throw new HubError('文件超过读取上限。','too_large');if(relay==='upstream_timeout')throw new HubError('网站连接 GitHub 超时，请稍后重试。','timeout');if(relay==='upstream_network')throw new HubError('网站暂时无法连接 GitHub，请稍后重试。','network');throw new HubError('GitHub 访问失败（'+status+'）。','network');}
       return await responseText(response,maxBytes);
-    }catch(error){if(error instanceof HubError)throw error;if(error.name==='AbortError')throw new HubError('连接超时，请稍后重新核验。','timeout');throw new HubError('网络连接失败，请检查访问 GitHub 的网络。','network');}
+    }catch(error){if(error instanceof HubError)throw error;if(error.name==='AbortError')throw new HubError('读取仓库超时，请稍后重新核验。','timeout');throw new HubError('仓库连接失败：当前站点的 GitHub 读取通道不可用，请稍后重试。','network');}
     finally{clearTimeout(timer);}
   }
   api(path){return 'https://api.github.com/repos/'+encodeURIComponent(this.repo.owner)+'/'+encodeURIComponent(this.repo.name)+(path?'/'+path:'');}
   async json(path,options={}){const text=await this.request(this.api(path),options);try{return JSON.parse(text);}catch{throw new HubError('GitHub 返回了无法解析的数据。');}}
-  async publicInfo(){const info=await this.json('');fail(info.private===false,'当前版本仅支持公开仓库。','private_repo');return info;}
+  gitURL(){return 'https://github.com/'+encodeURIComponent(this.repo.owner)+'/'+encodeURIComponent(this.repo.name)+'.git/info/refs?service=git-upload-pack';}
+  async gitRefs(){let refs;try{refs=parseGitRefs(await this.request(this.gitURL(),{auth:false}));}catch(e){if(e instanceof HubError)throw e;throw new HubError('无法解析公开仓库的提交版本，请稍后重试。','invalid_git_refs');}return refs;}
+  async publicInfo(){
+    let info;try{info=await this.json('');}catch(e){if(!['network','timeout','rate_limit'].includes(e.code))throw e;const git=await this.gitRefs();fail(git.defaultBranch,'无法识别公开仓库默认分支。');info={private:false,full_name:this.repo.owner+'/'+this.repo.name,default_branch:git.defaultBranch};}
+    fail(info.private===false,'当前版本仅支持公开仓库。','private_repo');return info;
+  }
   async snapshot(branch=''){
-    safeBranch(branch);const value=await this.json('commits/'+encodeURIComponent(branch||'HEAD'));
+    safeBranch(branch);let value;try{value=await this.json('commits/'+encodeURIComponent(branch||'HEAD'));}catch(e){
+      if(!['network','timeout','rate_limit'].includes(e.code))throw e;
+      const git=await this.gitRefs(),commit=git.refs[branch&&branch!=='HEAD'?'refs/heads/'+branch:'HEAD'];
+      fail(commit,'公开仓库不存在这个分支。','not_found');value={sha:commit};
+    }
     fail(commitOK(value.sha),'无法确认仓库提交版本。');
     return {commit:value.sha,branch:branch||'',committed_at:value.commit?.committer?.date||null};
   }
   async readFile(path,commit){
     safePath(path);fail(commitOK(commit),'必须先确定仓库提交版本。');
     const url='https://raw.githubusercontent.com/'+encodeURIComponent(this.repo.owner)+'/'+encodeURIComponent(this.repo.name)+'/'+commit+'/'+path.split('/').map(encodeURIComponent).join('/');
-    const text=await this.request(url,{auth:false});return {text,hash:await sha256(text)};
+    let text;try{text=await this.request(url,{auth:false});}catch(error){
+      if(!['network','timeout','rate_limit','not_found'].includes(error.code))throw error;
+      // Both sources are pinned to the same commit; never mix HEAD files into
+      // a verified snapshot. The Contents raw media type also supports >1MB.
+      text=await this.request(this.api('contents/'+path.split('/').map(encodeURIComponent).join('/')+'?ref='+commit),{auth:false,accept:'application/vnd.github.raw+json'});
+    }return {text,hash:await sha256(text)};
   }
   async readJSON(path,commit){const file=await this.readFile(path,commit);try{return {...file,data:JSON.parse(file.text.replace(/^\uFEFF/,''))};}catch{throw new HubError(path+' 的 JSON 格式无效。');}}
   async optionalJSON(path,commit){try{return await this.readJSON(path,commit);}catch(e){if(e.code==='not_found')return null;throw e;}}
@@ -224,5 +242,5 @@ export function writingPrompt(entry,management){
 }
 export function repairPrompt(entry){return `恢复 ${entry.repository_url} 的最新正式状态，先读AGENTS.md和docs/每日自动更新.md。检查今天完成回执和book/daily/active.json。已完成就结束；还在运行或状态不明先核实，不并行生成同一章。原执行已确认停止后，使用daily_update.py begin --resume-stopped恢复同一目标，不重置原修订次数，不另起下一章。实际完成检查、采用后finish，重建索引，原子写回并回读。不能以聊天回复替代仓库完成证据。`;}
 export function checkerPrompt(management,branch){
-  return `请为本聊天建立每天北京时间（Asia/Shanghai）20:00执行的总检查定时任务。先确认账号支持及GitHub权限，实际创建成功才报告编号、启用状态和下次执行时间。\n程序来源是通用系统仓库 ${SYSTEM_REPOSITORY}，管理仓库只放名单和报告。先固定通用系统提交，读取docs/管理端与代发端.md及tools/check_updates.mjs、web/dist/hub-core.mjs、web/dist/core.mjs，在临时环境保持相对目录执行；不要假定管理仓库里已有这些程序，不将小说或程序复制到管理数据仓库。\n每次执行都读取公开管理仓库 ${management} 的 ${branch||'默认分支'} 最新books.json，不把名单固定在提示词。使用 tools/check_updates.mjs 的同一套核验规则，检查选中的小说；写入reports/日期/执行编号.json和reports/latest.json，快照、报告与latest一起原子提交，保留历史执行。必要时使用GitHub连接器按固定提交收集离线快照，再运行--input模式，不能目测编造updated结果。提交前复核books.json哈希没变化，冲突后重新读取，不强写。报告区分本日有效冻结正文、草稿未完成、未更新、尚未到期、读取失败待核实。只汇总检查，不打开其他小说聊天，不自动代发平台。每本读取失败保留实际错误，不清零历史，不把改配置、旧回执或昨日补更算今天。若额度或授权失效，明确失败，不宣称报告已写回。`;
+  return `请为本聊天建立每天北京时间（Asia/Shanghai）20:00执行的总检查定时任务。先确认账号支持及GitHub权限，实际创建成功才报告编号、启用状态和下次执行时间。\n程序来源是通用系统仓库 ${SYSTEM_REPOSITORY}，管理仓库只放名单和报告。先固定通用系统提交，读取docs/管理端与代发端.md及tools/check_updates.mjs、web/dist/hub-core.mjs、web/dist/core.mjs、web/dist/github-transport.mjs，在临时环境保持相对目录执行；不要假定管理仓库里已有这些程序，不将小说或程序复制到管理数据仓库。\n每次执行都读取公开管理仓库 ${management} 的 ${branch||'默认分支'} 最新books.json，不把名单固定在提示词。使用 tools/check_updates.mjs 的同一套核验规则，检查选中的小说；写入reports/日期/执行编号.json和reports/latest.json，快照、报告与latest一起原子提交，保留历史执行。必要时使用GitHub连接器按固定提交收集离线快照，再运行--input模式，不能目测编造updated结果。提交前复核books.json哈希没变化，冲突后重新读取，不强写。报告区分本日有效冻结正文、草稿未完成、未更新、尚未到期、读取失败待核实。只汇总检查，不打开其他小说聊天，不自动代发平台。每本读取失败保留实际错误，不清零历史，不把改配置、旧回执或昨日补更算今天。若额度或授权失效，明确失败，不宣称报告已写回。`;
 }

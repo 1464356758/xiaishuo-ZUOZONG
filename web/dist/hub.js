@@ -89,12 +89,12 @@ function openBookDialog(book=null){ensureMutable();state.editing=book?.id||null;
 action($('addBook'),()=>openBookDialog());action($('emptyAdd'),()=>openBookDialog());
 const addGate=new RequestGate();$('bookDialog').addEventListener('close',()=>addGate.cancel());
 $('bookForm').addEventListener('submit',async event=>{
-  event.preventDefault();const ticket=addGate.start();$('submitBook').disabled=true;$('bookFormError').hidden=true;
+  event.preventDefault();const ticket=addGate.start();$('submitBook').disabled=true;$('submitBook').textContent='正在读取仓库…';$('bookFormError').hidden=true;
   try{ensureMutable();const repo=parseRepository($('bookRepo').value),branch=safeBranch($('bookBranch').value),chat=validateChatURL($('bookChat').value),book=await loadBook(new GitHubClient(repo.url),branch);if(!ticket.current())return;
     const prior=state.registry.books.find(b=>b.id===state.editing);if(prior?.book_id&&book.manifest.book.id!==prior.book_id)throw new HubError('这个链接的作品身份与原小说不同，请单独添加新书。');
     const entry={id:prior?.id||randomId(),book_id:book.manifest.book.id,title:$('bookName').value.trim()||book.manifest.book.title,repository_url:repo.url,branch,enabled:$('bookEnabled').checked,expected_time:$('bookTime').value,grace_minutes:Number($('bookGrace').value),effective_from:$('bookStart').value,baseline:prior?.baseline||{chapter_count:book.manifest.chapters.length,commit:book.snapshot.commit,captured_at:new Date().toISOString()}};
     const books=prior?state.registry.books.map(b=>b.id===prior.id?entry:b):[...state.registry.books,entry];state.registry=validateRegistry({...state.registry,books});prefs.chats[entry.id]=chat;persistPrivate();changed();$('bookDialog').close();setView('dashboard');toast('已加入本地清单，请点击底部“保存到 GitHub”。');
-  }catch(e){if(ticket.current()){$('bookFormError').textContent=e.message;$('bookFormError').hidden=false;}}finally{$('submitBook').disabled=false;}
+  }catch(e){if(ticket.current()){$('bookFormError').textContent=e.message;$('bookFormError').hidden=false;}}finally{$('submitBook').disabled=false;$('submitBook').textContent='读取仓库并加入清单';}
 });
 function openChat(book){const url=validateChatURL(prefs.chats[book.id]||'');if(!url){openBookDialog(book);throw new HubError('先填写这部小说对应的 GPT 聊天链接。');}window.open(url,'_blank','noopener,noreferrer');}
 async function bookAction(book,value){

@@ -3,7 +3,7 @@ import {githubFetch,parseGitRefs,parseCommitFeed} from './github-transport.mjs';
 import {normalizeQueryHistory} from './query-model.mjs';
 export {parseRepository, sha256, canonicalJSON};
 
-export const HUB_VERSION='1.3.0';
+export const HUB_VERSION='1.4.0';
 export const SYSTEM_REPOSITORY='https://github.com/1464356758/xiaishuo-ZUOZONG';
 export const STATUS={updated:'已更新',missing:'未更新',pending:'未完成',unknown:'待核实',not_due:'尚未到期',paused:'不参与检查',setup:'待初始化'};
 export class HubError extends ReaderError{}

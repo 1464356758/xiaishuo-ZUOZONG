@@ -57,6 +57,21 @@ class DailyTests(WorkspaceFixture):
         with self.assertRaises(daily.ns.WorkspaceError):
             daily.finish(self.project, first["run_id"])
 
+    def test_resume_stops_when_old_chapter_freeze_state_is_disabled(self):
+        self.release(1)
+        task = daily.begin(self.project)
+        state = ns.load_state(self.root)
+        state["serialization"]["enabled"] = False
+        ns.atomic_json(self.root / "state.json", state)
+        before = (self.root / "daily/active.json").read_bytes()
+        for operation in (lambda: daily.begin(self.project, resume_stopped=True),
+                          lambda: daily.finish(self.project, task["run_id"])):
+            with self.assertRaisesRegex(daily.ns.WorkspaceError, "冻结状态缺失或已关闭"):
+                operation()
+            self.assertEqual((self.root / "daily/active.json").read_bytes(), before)
+        self.assertEqual(daily.active_record(self.root)["chapter"], 2)
+        self.assertEqual(len(ns.load_state(self.root)["chapters"]), 1)
+
     def test_no_receipt_before_real_adoption(self):
         task = daily.begin(self.project)
         with self.assertRaises(daily.ns.WorkspaceError):

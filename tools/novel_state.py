@@ -145,7 +145,8 @@ def verify_files(root, state):
             require(path.is_file(), f"第 {key} 章缺少文件：{chapter[field]}")
             require(digest(path.read_text(encoding="utf-8")) == chapter[sha_field],
                     f"第 {key} 章文件与采用版本不符：{chapter[field]}")
-    if state.get("serialization", {}).get("enabled"):
+    # 冻结状态异常时停止，不能把关闭/丢失的开关当成旧工程改稿许可。
+    if state["config"].get("serial_mode") or "serialization" in state:
         serial_module().verify_frozen(state, serial_api())
     for pin in state.get("writing_briefs", {}).values():
         path = inside(root, pin["path"])

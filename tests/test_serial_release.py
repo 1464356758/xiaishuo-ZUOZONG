@@ -80,6 +80,108 @@ class SerialTests(WorkspaceFixture):
         with self.assertRaises(ns.WorkspaceError): self.serial.verify_frozen(state, self.a)
         self.assertNotEqual(old, "0" * 64)
 
+    def test_disabled_freeze_flag_cannot_enable_old_chapter_editing(self):
+        self.release(1)
+        original = ns.load_state(self.root)
+        draft = Path(self.temp.name) / "edit.txt"
+        draft.write_text("合成测试：禁止改写冻结旧章。", encoding="utf-8")
+        for mode in (True, False):
+            with self.subTest(serial_mode=mode):
+                state = copy.deepcopy(original)
+                state["config"]["serial_mode"] = mode
+                state["serialization"]["enabled"] = False
+                ns.atomic_json(self.root / "state.json", state)
+                before = (self.root / "state.json").read_bytes()
+                with self.assertRaisesRegex(ns.WorkspaceError, "冻结状态缺失或已关闭"):
+                    ns.candidate(self.root, 1, draft, "edit", "合成测试")
+                self.assertEqual((self.root / "state.json").read_bytes(), before)
+
+    def test_missing_freeze_state_or_manifest_cannot_be_recreated_silently(self):
+        self.release(1)
+        original = ns.load_state(self.root)
+        for missing in ("serialization", "frozen"):
+            with self.subTest(missing=missing):
+                state = copy.deepcopy(original)
+                if missing == "serialization":
+                    del state["serialization"]
+                else:
+                    del state["serialization"]["frozen"]
+                ns.atomic_json(self.root / "state.json", state)
+                before = (self.root / "state.json").read_bytes()
+                with self.assertRaises(ns.WorkspaceError):
+                    ns.status(self.root)
+                with self.assertRaises(ns.WorkspaceError):
+                    self.serial.enable(self.root, "合成错误恢复", state["revision"], self.a)
+                self.assertEqual((self.root / "state.json").read_bytes(), before)
+
+    def test_old_body_and_record_are_unchanged_after_all_revision_attempts(self):
+        self.release(1)
+        old = ns.load_state(self.root)["chapters"]["1"]
+        text = ns.inside(self.root, old["text_path"])
+        record = ns.inside(self.root, old["record_path"])
+        draft = Path(self.temp.name) / "edit.txt"
+        draft.write_text("合成测试：旧章不得修改。", encoding="utf-8")
+        changed = ns.read_json(record)
+        changed["title"] = "合成测试修改旧标题"
+        changed_path = Path(self.temp.name) / "changed-record.json"
+        ns.atomic_json(changed_path, changed)
+        before = {p.relative_to(self.root): p.read_bytes() for p in self.root.rglob("*") if p.is_file()}
+        operations = (
+            lambda: ns.candidate(self.root, 1, draft, "edit", "合成测试"),
+            lambda: ns.candidate(self.root, 1, draft, "edit", "合成测试", repairing=True),
+            lambda: ns.adopt(self.root, text, changed_path),
+            lambda: ns.adopt(self.root, text, changed_path, revalidate=True),
+        )
+        for operation in operations:
+            with self.assertRaisesRegex(ns.WorkspaceError, "定稿已冻结"):
+                operation()
+            self.assertEqual({p.relative_to(self.root): p.read_bytes() for p in self.root.rglob("*") if p.is_file()}, before)
+
+    def test_frozen_file_tampering_blocks_continuation_without_rewriting_it(self):
+        self.release(1)
+        state = ns.load_state(self.root)
+        draft = Path(self.temp.name) / "next.txt"
+        draft.write_text("合成测试下一章。", encoding="utf-8")
+        for field in ("text_path", "record_path"):
+            with self.subTest(field=field):
+                source = ns.inside(self.root, state["chapters"]["1"][field])
+                original = source.read_bytes()
+                changed = original + "\n合成测试错误改动".encode()
+                source.write_bytes(changed)
+                with self.assertRaisesRegex(ns.WorkspaceError, "文件与采用版本不符"):
+                    ns.candidate(self.root, 2, draft)
+                self.assertEqual(source.read_bytes(), changed)
+                self.assertNotIn("2", ns.load_state(self.root)["tasks"])
+                source.write_bytes(original)
+
+    def test_next_chapter_repairs_leave_every_old_frozen_file_unchanged(self):
+        self.release(1)
+        old = ns.load_state(self.root)
+        protected = {old["chapters"]["1"][key]: ns.inside(self.root, old["chapters"]["1"][key]).read_bytes()
+                     for key in ("text_path", "record_path")}
+        path, _, _, _ = self.prepare(2)
+        path.write_text("乙把钥匙交给丙。", encoding="utf-8")
+        task = ns.candidate(self.root, 2, path, request="合成测试只修未定稿章", repairing=True)
+        self.assertEqual(task["repairs"], 1)
+        state = ns.load_state(self.root)
+        self.assertEqual(state["chapters"], old["chapters"])
+        self.assertEqual(state["serialization"]["frozen"], old["serialization"]["frozen"])
+        for name, data in protected.items():
+            self.assertEqual(ns.inside(self.root, name).read_bytes(), data)
+
+    def test_reopen_does_not_unlock_frozen_chapters(self):
+        # 完稿内容的语义判断不在本用例范围；只演练重开后的冻结边界。
+        self.release(1)
+        state = ns.load_state(self.root)
+        state["completion"] = {"synthetic_fixture": True}
+        ns.atomic_json(self.root / "state.json", state)
+        ns.reopen(self.root, "合成测试重开流程")
+        self.assertEqual(ns.load_state(self.root)["serialization"]["frozen"], state["serialization"]["frozen"])
+        draft = Path(self.temp.name) / "edit.txt"
+        draft.write_text("合成测试不得借重开改旧章。", encoding="utf-8")
+        with self.assertRaisesRegex(ns.WorkspaceError, "定稿已冻结"):
+            ns.candidate(self.root, 1, draft, "edit", "合成测试")
+
     def test_gate_stale_after_roadmap_change(self):
         path, recpath, rec, report = self.prepare(1); self.gate(path, recpath, report)
         source = Path(self.temp.name) / "future.md"; source.write_text("只修改未来的测试路线")

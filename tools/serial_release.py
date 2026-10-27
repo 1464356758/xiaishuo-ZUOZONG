@@ -26,9 +26,12 @@ def new_state(config, a):
 
 
 def verify_frozen(state, a):
-    serial = state["serialization"]
+    serial = state.get("serialization")
+    a.require(isinstance(serial, dict) and serial.get("enabled") is True,
+              "连载冻结状态缺失或已关闭；停止写入并核对正式版本，不能退回旧章改稿流程。")
     a.require(state["config"].get("serial_mode") is True, "冻结项目不能静默关闭连载模式。")
-    a.require(set(serial["frozen"]) == set(state["chapters"]), "采用章与冻结清单不一致。")
+    a.require(isinstance(serial.get("frozen"), dict) and set(serial["frozen"]) == set(state["chapters"]),
+              "采用章与冻结清单不一致。")
     for n, pin in serial["frozen"].items():
         item = state["chapters"][n]
         a.require(all(pin[k] == item[k] for k in ("text_sha256", "record_sha256")),

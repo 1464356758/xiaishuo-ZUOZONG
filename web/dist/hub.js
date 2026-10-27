@@ -26,19 +26,19 @@ const sync=new AutoSync({snapshot:()=>structuredClone(state.registry),canSave:()
   state.registry=current?result.registry:{...state.registry,revision:result.registry.revision,updated_at:result.registry.updated_at};state.dirty=!current;persist();
 },onStatus:(status,error)=>{state.syncStatus=status;state.saving=status==='saving';if(status==='error')notice(error.message+' 修改已留在本机，请点击“重试同步”。',true);if(status==='saved')notice('已自动保存到 GitHub。');render();}});
 function changed(){state.registry=validateRegistry(state.registry);state.dirty=true;persist();sync.touch();render();}
-const labels={dashboard:['我的小说','我的小说。','点击书名看正文，新增和修改自动保存到 GitHub。'],reading:['阅读正文','接着读下去。','从已加入的小说中选择，直接阅读、复制和导出。'],delivery:['小说代发码','选择小说，就有代发码。','把代发链接交给合作人，文章随仓库更新。'],reports:['今日更新','查询今天更新。','勾选小说，点击查询，按最新章节的提交日期判断。'],settings:['同步设置','一次授权，自动保存。','GitHub 保存清单与设置，打开软件自动读取。']};
-function setView(name,open=true){if(!labels[name])return;state.view=name;for(const key of Object.keys(labels))$(key+'View').hidden=key!==name;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));$('viewLabel').textContent=labels[name][0];$('pageTitle').textContent=labels[name][1];$('pageSubtitle').textContent=labels[name][2];if(name==='delivery')generateCode();if(name==='reading'&&open){const b=selectedBook('readBookSelect');if(b&&reading?.entry.id!==b.id)openReader(b);}}
+const labels={dashboard:['我的小说','我的小说。','点击书名看正文，新增和修改自动保存到 GitHub。'],prompts:['日更指令','每天，接着写。','选一本小说和执行时间，生成完整指令，复制到对应 GPT 工作聊天。'],reading:['阅读正文','接着读下去。','从已加入的小说中选择，直接阅读、复制和导出。'],delivery:['小说代发码','选择小说，就有代发码。','把代发链接交给合作人，文章随仓库更新。'],reports:['今日更新','查询今天更新。','勾选小说，点击查询，按最新章节的提交日期判断。'],settings:['同步设置','一次授权，自动保存。','GitHub 保存清单与设置，打开软件自动读取。']};
+function setView(name,open=true){if(!labels[name])return;state.view=name;for(const key of Object.keys(labels))$(key+'View').hidden=key!==name;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));$('viewLabel').textContent=labels[name][0];$('pageTitle').textContent=labels[name][1];$('pageSubtitle').textContent=labels[name][2];if(name==='delivery')generateCode();if(name==='prompts')updateWritingPrompt();if(name==='reading'&&open){const b=selectedBook('readBookSelect');if(b&&reading?.entry.id!==b.id)openReader(b);}}
 function selectedBook(id){return state.registry.books.find(b=>b.id===$(id).value)||state.registry.books[0];}
 function showText(title,text){$('textTitle').textContent=title;$('textContent').value=text;$('textDialog').showModal();}
 document.querySelectorAll('[data-view]').forEach(b=>action(b,()=>setView(b.dataset.view)));
 document.querySelectorAll('[data-close]').forEach(b=>action(b,()=>$(b.dataset.close).close()));
 for(const id of ['connectionLabel','authorizeSync'])action($(id),()=>{setView('settings');$('writeToken').focus();});
 const badge=status=>el('span','badge '+(status||'unknown'),QUERY_STATUS[status]||STATUS[status]||'待读取');
-let renderSeq=0,optionSignature='';
+let renderSeq=0,optionSignature='',promptBookId='';
 function renderOptions(){
-  const signature=JSON.stringify(state.registry.books.map(b=>[b.id,b.title]));if(signature===optionSignature)return;optionSignature=signature;
-  for(const id of ['deliveryBook','readBookSelect']){const select=$(id),old=select.value;select.replaceChildren();if(!state.registry.books.length){const o=el('option',null,'先添加一部小说');o.value='';select.append(o);}for(const b of state.registry.books){const o=el('option',null,b.title);o.value=b.id;select.append(o);}if(state.registry.books.some(b=>b.id===old))select.value=old;}
-  generateCode();
+  const signature=JSON.stringify(state.registry.books.map(b=>[b.id,b.title,b.expected_time,b.chat_url||'']));if(signature===optionSignature)return;optionSignature=signature;
+  for(const id of ['deliveryBook','readBookSelect','writingBook']){const select=$(id),old=select.value;select.replaceChildren();if(!state.registry.books.length){const o=el('option',null,'先添加一部小说');o.value='';select.append(o);}for(const b of state.registry.books){const o=el('option',null,b.title);o.value=b.id;select.append(o);}if(state.registry.books.some(b=>b.id===old))select.value=old;}
+  generateCode();updateWritingPrompt({resetTime:true});
 }
 async function render(){
   const seq=++renderSeq,registry=state.registry,fp=await selectionFingerprint(registry);if(seq!==renderSeq)return;
@@ -56,7 +56,7 @@ async function render(){
     visible++;const row=el('tr'),td=el('td'),check=el('input');check.type='checkbox';check.checked=book.enabled;check.setAttribute('aria-label','检查《'+book.title+'》');check.addEventListener('change',()=>{state.registry.books=state.registry.books.map(b=>b.id===book.id?{...b,enabled:check.checked}:b);changed();});td.append(check);row.append(td);
     const titleTd=el('td'),cell=el('div','book-cell'),title=el('button','book-open book-title',book.title);action(title,()=>openReader(book));const words=el('div');words.append(title,el('span','book-meta',Number.isInteger(result?.chapter)?result.chapter+' 章':book.baseline?book.baseline.chapter_count+' 章':'待读取章节'));cell.append(el('span','book-avatar',book.title.slice(0,1)),words);titleTd.append(cell);row.append(titleTd);
     const time=el('td');time.append(el('div',null,book.expected_time),el('span','book-meta','北京时间'));row.append(time);const statusTd=el('td');statusTd.append(badge(result?.status),el('span','status-note',result?.reason||'尚无今日检查结果'));row.append(statusTd);
-    const actionsTd=el('td'),actions=el('div','row-actions');for(const [label,fn] of [['查看正文',()=>openReader(book)],['代发码',()=>{setView('delivery');$('deliveryBook').value=book.id;generateCode();}],['编辑',()=>openBookDialog(book)]]){const button=el('button',null,label);action(button,fn);actions.append(button);}
+    const actionsTd=el('td'),actions=el('div','row-actions');for(const [label,fn] of [['查看正文',()=>openReader(book)],['代发码',()=>{setView('delivery');$('deliveryBook').value=book.id;generateCode();}],['日更指令',()=>openWritingPrompt(book)],['编辑',()=>openBookDialog(book)]]){const button=el('button',null,label);action(button,fn);actions.append(button);}
     const menu=el('select');menu.setAttribute('aria-label','《'+book.title+'》更多操作');for(const [value,label] of [['','更多'],['chat','打开 GPT'],['schedule','定时指令'],['repair','补更指令'],['remove','移出清单']]){const o=el('option',null,label);o.value=value;menu.append(o);}menu.addEventListener('change',()=>{const value=menu.value;menu.value='';bookAction(book,value).catch(e=>toast(e.message));});actions.append(menu);actionsTd.append(actions);row.append(actionsTd);$('bookRows').append(row);
   }
   $('booksEmpty').hidden=visible>0;renderOptions();renderReports(report,liveGood?state.live:state.report);$('checkReportNow').disabled=state.checking||!registry.books.some(b=>b.enabled);
@@ -125,7 +125,28 @@ $('bookForm').addEventListener('submit',async event=>{
     state.registry=validateRegistry({...state.registry,books:prior?state.registry.books.map(b=>b.id===prior.id?entry:b):[...state.registry.books,entry]});changed();$('bookDialog').close();await openReader(entry,{client,book});toast(state.client.canWrite?'已加入，正在自动保存到 GitHub。':'已加入并打开正文；启用自动保存后会同步到 GitHub。');
   }catch(e){if(ticket.current()){$('bookFormError').textContent=e.message;$('bookFormError').hidden=false;}}finally{$('submitBook').disabled=false;$('submitBook').textContent='添加并打开正文';}
 });
-async function bookAction(book,value){if(value==='chat'){const url=validateChatURL(book.chat_url||legacy.chats?.[book.id]||'');if(!url){openBookDialog(book);return;}window.open(url,'_blank','noopener,noreferrer');}if(value==='schedule')showText('本书定时写作指令',writingPrompt(book,config.repository_url));if(value==='repair')showText('补更指令',repairPrompt(book));if(value==='remove'&&await confirmAction('把《'+book.title+'》移出小说清单？不会删除仓库或正文。')){state.registry.books=state.registry.books.filter(b=>b.id!==book.id);changed();if(reading?.entry.id===book.id){reading=null;$('readText').textContent='';$('readTitle').textContent='这部小说已移出清单';disableReading();}}}
+async function bookAction(book,value){if(value==='chat'){const url=validateChatURL(book.chat_url||legacy.chats?.[book.id]||'');if(!url){openBookDialog(book);return;}window.open(url,'_blank','noopener,noreferrer');}if(value==='schedule')openWritingPrompt(book);if(value==='repair')showText('补更指令',repairPrompt(book));if(value==='remove'&&await confirmAction('把《'+book.title+'》移出小说清单？不会删除仓库或正文。')){state.registry.books=state.registry.books.filter(b=>b.id!==book.id);changed();if(reading?.entry.id===book.id){reading=null;$('readText').textContent='';$('readTitle').textContent='这部小说已移出清单';disableReading();}}}
+function updateWritingPrompt({resetTime=false}={}){
+  const book=selectedBook('writingBook'),changedBook=(book?.id||'')!==promptBookId;
+  if(book&&(changedBook||resetTime))$('writingTime').value=book.expected_time||'09:00';
+  promptBookId=book?.id||'';
+  const time=$('writingTime').value,valid=!!book&&/^([01]\d|2[0-3]):[0-5]\d$/.test(time);
+  const text=valid?writingPrompt({...book,expected_time:time},config.repository_url):'';
+  if($('writingPromptText').value!==text)$('writingPromptStatus').textContent='';
+  $('writingPromptText').value=text;$('writingPromptTitle').textContent=book?'《'+book.title+'》日更指令':'完整日更指令';
+  $('writingPromptSummary').textContent=book?(valid?'每天北京时间 '+time+' · 每次只写一章':'请选择有效的每天执行时间。'):'先在“我的小说”添加一本书。';
+  $('generateWritingPrompt').disabled=$('copyWritingPrompt').disabled=!valid;
+  const chat=book?.chat_url||legacy.chats?.[book?.id]||'';$('openWritingChat').disabled=!chat;
+  $('writingChatHint').textContent=chat?'复制后打开本书聊天，粘贴发送。':book?'尚未填写 GPT 聊天链接，可在“我的小说 → 编辑”添加；也可以自行打开本书聊天粘贴。':'';
+  return text;
+}
+function openWritingPrompt(book=null){setView('prompts');if(book){$('writingBook').value=book.id;updateWritingPrompt({resetTime:true});}}
+async function copyWritingPrompt(){const text=updateWritingPrompt();if(!text)throw new HubError('请先选择小说和有效执行时间。');try{await copyText(text);$('writingPromptStatus').textContent='已复制完整指令，请到本书 GPT 工作聊天粘贴并发送。';toast('日更指令已复制。');}catch(e){$('writingPromptStatus').textContent='完整指令已生成，请在预览框中长按选中并复制。';throw e;}}
+action($('openWritingPrompt'),()=>openWritingPrompt());
+$('writingBook').addEventListener('change',()=>updateWritingPrompt({resetTime:true}));$('writingTime').addEventListener('input',()=>updateWritingPrompt());
+$('writingPromptForm').addEventListener('submit',event=>{event.preventDefault();copyWritingPrompt().catch(e=>toast(e.message));});
+action($('copyWritingPrompt'),copyWritingPrompt);
+action($('openWritingChat'),()=>{const book=selectedBook('writingBook');if(book)return bookAction(book,'chat');});
 action($('copyChecker'),()=>showText('每天20:00总检查任务',checkerPrompt(config.repository_url,config.branch)));action($('textCopy'),async()=>{await copyText($('textContent').value);toast('已复制。');});
 
 let reading=null,readTicket=0,chapterTicket=0;

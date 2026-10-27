@@ -109,3 +109,12 @@ test('relay permits only anonymous read-only Git reference discovery',async()=>{
   const r=await handleGitHubRelay(at(target,{headers:{Authorization:'Bearer TEST_ONLY_SECRET'}}),{fetcher:async(url,opts)=>{sent=opts;return new Response(refs());}});assert.equal(r.status,200);assert.equal(parseGitRefs(await r.text()).refs.HEAD,commit);assert.equal(sent.headers.Authorization,undefined);
   for(const value of [target.replace('git-upload-pack','git-receive-pack'),target.replace('/info/refs','/archive/main.zip')])assert.equal((await handleGitHubRelay(at(value))).status,400);
 });
+
+test('default and HEAD snapshots carry the real branch so progress follows a default branch switch',async()=>{
+ let branch='main';const requests=[],advertisement=()=>packet('# service=git-upload-pack\n')+'0000'+packet(commit+' HEAD\0symref=HEAD:refs/heads/'+branch+'\n')+packet(commit+' refs/heads/'+branch+'\n')+'0000';
+ const client=new GitHubClient('example/novel',{preferGit:true,fetcher:async url=>{requests.push(url);return new Response(advertisement());}});
+ assert.equal((await client.snapshot()).branch,'main');assert.equal((await client.snapshot('HEAD')).branch,'main');assert.equal((await client.snapshot('main')).branch,'main');
+ branch='next';assert.equal((await client.snapshot()).branch,'next');assert.ok(requests.every(url=>url.includes('/info/refs?')));
+ const fallback=new GitHubClient('example/novel',{fetcher:async url=>url.includes('/info/refs?')?new Response(advertisement()):new Response('{}',{status:403})});
+ assert.equal((await fallback.snapshot()).branch,'next');
+});

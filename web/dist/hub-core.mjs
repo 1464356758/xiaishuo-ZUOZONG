@@ -115,14 +115,14 @@ export class GitHubClient{
     fail(info.private===false,'当前版本仅支持公开仓库。','private_repo');return info;
   }
   async snapshot(branch=''){
-    if(this.preferGit){safeBranch(branch);const git=await this.gitRefs(),commit=git.refs[branch&&branch!=='HEAD'?'refs/heads/'+branch:'HEAD'];fail(commit,'公开仓库不存在这个分支。','not_found');return {commit,branch:branch||'',committed_at:null};}
-    safeBranch(branch);let value;try{value=await this.json('commits/'+encodeURIComponent(branch||'HEAD'));}catch(e){
+    if(this.preferGit){safeBranch(branch);const git=await this.gitRefs(),commit=git.refs[branch&&branch!=='HEAD'?'refs/heads/'+branch:'HEAD'];fail(commit,'公开仓库不存在这个分支。','not_found');return {commit,branch:branch&&branch!=='HEAD'?branch:git.defaultBranch||'',committed_at:null};}
+    safeBranch(branch);let value,resolvedBranch=branch&&branch!=='HEAD'?branch:'';try{value=await this.json('commits/'+encodeURIComponent(branch||'HEAD'));}catch(e){
       if(!['network','timeout','rate_limit'].includes(e.code))throw e;
       const git=await this.gitRefs(),commit=git.refs[branch&&branch!=='HEAD'?'refs/heads/'+branch:'HEAD'];
-      fail(commit,'公开仓库不存在这个分支。','not_found');value={sha:commit};
+      fail(commit,'公开仓库不存在这个分支。','not_found');value={sha:commit};resolvedBranch||=git.defaultBranch||'';
     }
     fail(commitOK(value.sha),'无法确认仓库提交版本。');
-    return {commit:value.sha,branch:branch||'',committed_at:value.commit?.committer?.date||null};
+    return {commit:value.sha,branch:resolvedBranch,committed_at:value.commit?.committer?.date||null};
   }
   async readFile(path,commit){
     safePath(path);fail(commitOK(commit),'必须先确定仓库提交版本。');

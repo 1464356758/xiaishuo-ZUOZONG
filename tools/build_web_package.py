@@ -12,7 +12,7 @@ HEADERS = "/*\n  Referrer-Policy: no-referrer\n  X-Content-Type-Options: nosniff
 
 
 def archive(out, files, kind):
-    manifest = {"format": "novel-workspace-package-v1", "package": kind, "version": "1.2.1", "contains_novel_data": False,
+    manifest = {"format": "novel-workspace-package-v1", "package": kind, "version": "1.3.0", "contains_novel_data": False,
                 "files": {name: hashlib.sha256(body).hexdigest() for name, body in files.items()}}
     files = dict(files, **{"PACKAGE_MANIFEST.json": (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode()})
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
@@ -36,7 +36,7 @@ def build(root=ROOT, out_dir=None):
     owner.update(common)
     owner["netlify/functions/github.mjs"] = (relay + '\nexport default request=>handleGitHubRelay(request);\n').encode()
     owner["部署说明.txt"] = (root / "docs/网页部署与首次使用.md").read_bytes()
-    partner_names = ["reader.html", "reader.js", "hub-core.mjs", "core.mjs", "github-transport.mjs", "query-model.mjs", "ui.mjs", "hub.css", "icon.svg"]
+    partner_names = ["reader.html", "reader.js", "reading-state.mjs", "hub-core.mjs", "core.mjs", "github-transport.mjs", "query-model.mjs", "ui.mjs", "hub.css", "icon.svg"]
     partner = {name: (dist / name).read_bytes() for name in partner_names}
     partner["index.html"] = partner["reader.html"]
     partner.update(common)

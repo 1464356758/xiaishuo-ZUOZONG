@@ -3,7 +3,7 @@ import {githubFetch,parseGitRefs,parseCommitFeed} from './github-transport.mjs';
 import {normalizeQueryHistory} from './query-model.mjs';
 export {parseRepository, sha256, canonicalJSON};
 
-export const HUB_VERSION='1.2.1';
+export const HUB_VERSION='1.3.0';
 export const SYSTEM_REPOSITORY='https://github.com/1464356758/xiaishuo-ZUOZONG';
 export const STATUS={updated:'已更新',missing:'未更新',pending:'未完成',unknown:'待核实',not_due:'尚未到期',paused:'不参与检查',setup:'待初始化'};
 export class HubError extends ReaderError{}
@@ -36,7 +36,7 @@ export function validateRegistry(value){
     fail(/^([01]\d|2[0-3]):[0-5]\d$/.test(b.expected_time)&&Number.isInteger(b.grace_minutes)&&b.grace_minutes>=0&&b.grace_minutes<=360&&validDay(b.effective_from),'计划时间或起算日期无效。');
     let baseline=null;
     if(b.baseline){fail(Number.isInteger(b.baseline.chapter_count)&&b.baseline.chapter_count>=0&&commitOK(b.baseline.commit),'小说检查基线无效。');baseline={chapter_count:b.baseline.chapter_count,commit:b.baseline.commit,captured_at:String(b.baseline.captured_at||'')};}
-    return {id:b.id,book_id:b.book_id,title:b.title.trim(),repository_url:repo.url,branch,enabled:b.enabled,expected_time:b.expected_time,grace_minutes:b.grace_minutes,effective_from:b.effective_from,baseline,...(b.chat_url?{chat_url:validateChatURL(b.chat_url)}:{})};
+    return {id:b.id,book_id:b.book_id,title:b.title.trim(),repository_url:repo.url,branch,enabled:b.enabled,expected_time:b.expected_time,grace_minutes:b.grace_minutes,effective_from:b.effective_from,baseline,...(b.chat_url?{chat_url:validateChatURL(b.chat_url)}:{}),...(b.feedback_url?{feedback_url:validateChatURL(b.feedback_url)}:{})};
   });
   return {schema_version:1,type:value.type,revision:value.revision,timezone:'Asia/Shanghai',updated_at:value.updated_at||null,books,...(value.settings?{settings:{reader_url:value.settings.reader_url?validateReaderURL(value.settings.reader_url):''}}:{}),...(value.query_history?{query_history:normalizeQueryHistory(value.query_history)}:{})};
 }
@@ -220,7 +220,7 @@ export async function readFormalChapter(client,book,chapter){
   fail(chapter&&!chapter.storage&&!chapter.needs_revalidation,'本章需要重新核对或仍使用旧加密格式。');
   const file=await client.readFile(chapter.text_path,book.snapshot.commit);fail(file.hash===chapter.sha256,'正文与正式目录校验不一致，已停止复制和导出。','hash_mismatch');return file.text;
 }
-export function suggestedChapter(chapters,progress){if(!chapters.length)return null;const n=Number(progress?.chapter);if(!Number.isInteger(n)||n<1)return chapters[0];return chapters.find(c=>c.number===n+1)||chapters.find(c=>c.number===n)||chapters[0];}
+export function suggestedChapter(chapters,progress){if(!chapters.length)return null;const n=Number(progress?.chapter),previous=chapters.find(c=>c.number===n);if(!Number.isInteger(n)||n<1||!previous)return chapters[0];if(progress.sha256&&previous.sha256!==progress.sha256)return previous;return chapters.find(c=>c.number===n+1)||previous;}
 function proof(condition,message){fail(condition,message,'invalid_receipt');}
 export async function verifyCompletion(client,book,receipt,date,now=new Date()){
   const {state,manifest,snapshot}=book,r=receipt;
@@ -242,6 +242,29 @@ export async function verifyCompletion(client,book,receipt,date,now=new Date()){
   proof(rec.hash===r.record_sha256&&release.hash===r.release_sha256,'章后记录或检查报告校验失败。');
   proof(rec.data.chapter===r.chapter&&rec.data.text_sha256===r.body_sha256&&release.data.chapter===r.chapter&&release.data.book_id===r.book_id&&release.data.text_sha256===r.body_sha256&&release.data.record_sha256===r.record_sha256&&release.data.decision==='release'&&release.data.read_full_text===true&&Array.isArray(release.data.blocking_issues)&&release.data.blocking_issues.length===0,'检查报告未通过或对应另一份正文。');
   proof(body.trim().length>0,'正文为空。');return {chapter:r.chapter,sha256:r.body_sha256,completed_at:r.completed_at,run_id:r.run_id,release_sha256:r.release_sha256};
+}
+export async function inspectExecution(entry,{now=new Date(),client=new GitHubClient(entry.repository_url)}={}){
+  const result={book_id:entry.book_id,status:'unknown',label:'尚未核实',reason:'',commit:null,chapter:null,checked_at:new Date(now).toISOString()};
+  try{
+    const book=await loadBook(client,entry.branch);result.commit=book.snapshot.commit;
+    fail(!entry.book_id||entry.book_id===book.manifest.book.id,'作品身份已改变，请核对仓库。','identity_mismatch');
+    result.book_id=book.manifest.book.id;
+    if(!book.state)return {...result,status:'setup',label:'尚未初始化',reason:'先完成本书平台、选题和规划。'};
+    const day=dayInShanghai(now),receipt=await client.optionalJSON('book/daily/'+day+'.json',result.commit);
+    if(receipt){const evidence=await verifyCompletion(client,book,receipt.data,day,now);return {...result,status:'completed',label:'本日正式章已核验',chapter:evidence.chapter,evidence,reason:'已核对正文、冻结、审查和完成回执；平台发布另行确认。'};}
+    const file=await client.optionalJSON('book/daily/active.json',result.commit),active=file?.data;
+    if(active){
+      fail(active.type==='novel-daily-task-v1'&&active.book_id===result.book_id&&['running','blocked','completed'].includes(active.status)&&Number.isInteger(active.chapter)&&active.chapter>0&&/^[A-Za-z0-9_-]{8,100}$/.test(active.run_id||''),'执行记录身份或状态无效。','invalid_active');
+      result.chapter=active.chapter;
+      if(active.status==='running')return {...result,status:'pending',label:'有未完成执行记录',reason:'目标第'+active.chapter+'章。仓库记录不能证明任务仍存活；先核实原执行，再恢复同一目标。'};
+      if(active.status==='blocked')return {...result,status:'blocked',label:'执行已记录中断',reason:active.reason||'核实原执行停止后，继续原目标章。'};
+      const completedDay=dayInShanghai(active.completed_at),old=completedDay===day?null:await client.optionalJSON('book/daily/'+completedDay+'.json',result.commit);
+      if(!old)throw new HubError('执行标为完成但对应回执缺失，请先恢复原目标的完成证据，不能直接开下一章。','missing_receipt');
+      const evidence=await verifyCompletion(client,book,old.data,completedDay,now);fail(evidence.run_id===active.run_id&&evidence.chapter===active.chapter,'执行记录与完成回执不匹配。','invalid_active');
+    }
+    if(!book.state.serialization?.enabled)return {...result,status:'legacy',label:'旧书需核对接入条件',reason:'缺少可核验的连载冻结机制；不自动追认旧章。'};
+    return {...result,status:'waiting',label:'暂无本日完成回执',reason:'未发现本日正式完成证据；这不代表定时任务已建立或未建立。'};
+  }catch(error){return {...result,status:'unknown',label:'读取或核验未通过',reason:error.message,error_code:error.code||'read_failed'};}
 }
 export async function inspectBook(entry,{now=new Date(),client=new GitHubClient(entry.repository_url)}={}){
   const date=dayInShanghai(now),base={id:entry.id,book_id:entry.book_id,title:entry.title,checked_at:new Date(now).toISOString(),status:'unknown',reason:'',chapters:null,commit:null};
@@ -269,7 +292,7 @@ export async function inspectRegistry(registry,{now=new Date(),clientFactory=b=>
   return {schema_version:1,type:'novel-hub-report-v1',date:dayInShanghai(now),checked_at:new Date(now).toISOString(),registry_revision:registry.revision,registry_fingerprint:await registryFingerprint(registry),counts,results};
 }
 export function writingPrompt(entry,management){
-  return `请在当前这本小说的工作聊天中，建立每天北京时间（Asia/Shanghai）${entry.expected_time}执行的定时任务，返回当前聊天，不混入其他小说。真正创建后告诉我任务启用状态、编号和下次执行时间；如果当前账号无法创建或工具权限不足，明确说明，不能仅口头承诺。\n先核对本书是否具备tools/daily_update.py及新采用时间记录；旧书缺工具时按通用系统 ${SYSTEM_REPOSITORY} 的docs/旧书接入工作台.md核对合并升级，不复制母版state、不追认旧章通过、不擅自启用旧书冻结。\n每次执行：读取 ${entry.repository_url} ${entry.branch||'默认分支'} 的最新提交，遵循AGENTS.md和现有每日一章工作流。先运行 python3 tools/daily_update.py --project . begin；若返回already_completed或verify_in_progress，停止重复写作并说明；若需恢复原目标，先确认原执行已停止。首次begin后把执行记录原子提交并回读，再开始正文。每次只完成目标一章，最多3轮局部修订；不重置计数、不重写冻结章、不跳过平台及选题等待。完成审查采用后运行 python3 tools/daily_update.py --project . finish --run-id 本次编号，重建并验证online/index.json，把正文、状态、执行记录与完成回执一起原子写回，非强制更新并回读。工具返回的是机械核验结果，不冒充文学质量保证。失败则运行python3 tools/daily_update.py --project . block --run-id 本次编号 --reason 真实原因并写回，不伪造完成。无API Key、不自动购买额度。\n管理仓库 ${management||'尚未设置'} 中的勾选只控制每日检查，不等于停写；如要停止本书更新，应暂停此定时任务。`;
+  return `为《${entry.title}》建立或更新唯一的每日写作任务：每天北京时间（Asia/Shanghai）${entry.expected_time}执行。先按仓库链接与作品身份查询已有定时任务；已有就复用、更新，不能每天另建。实际创建后核对启用状态、任务编号、下次执行时间和实际反馈对话。用户接受固定的任务反馈对话，后续沿用该任务，不承诺一定返回创建时的原聊天。${entry.feedback_url?'已登记反馈链接：'+entry.feedback_url+'；仍须核对实际任务绑定。':''}若工具无法指定对话或读取模型及思考档位，明确记为未验证，不能以提示词声称已切成6.1或最高档，也不要求用户登录云浏览器。\n本书唯一事实源：${entry.repository_url} 的${entry.branch||'默认分支'}。${entry.book_id?'预期作品身份：'+entry.book_id+'。':''}反馈聊天仅供查看，正文与进度以GitHub为准。先读AGENTS.md、docs/每日自动更新.md和本书每日一章指令。旧书缺工具时按 ${SYSTEM_REPOSITORY} 的docs/旧书接入工作台.md核对合并升级，不复制母版state、不追认旧章通过、不擅自启用冻结。\n每次运行 daily_update.py begin 固定目标。already_completed停止重复；verify_in_progress先核实旧执行，实际停止后才能恢复；recovered_completion先同步恢复回执，不顺便写下一章。首次或恢复begin后，先按预期分支头原子保存执行记录并回读，再开始写作。\n实际读取上章、最近三章全文、五章推进、相关事实与人物知情、开放承诺；到期五章及阶段全文回看在采用前完成。先登记干净任务书与场景预算，检索全书相似办法并回查原文，按本书字数写完整目标一章。写后从正文提取真实选择、代价和变化，再完成限信息审读与带引文审核；不得用摘要代替正文、批量填pass或降低门槛。只作必要局部修订，最多3轮，不重置计数，不改冻结章。\n通过release-check并adopt后，运行 daily_update.py finish --run-id 本次编号，重建并验证online/index.json；正文、事实记录、审查、状态、执行回执与索引同批非强制写回。提交前再查远端执行编号与分支头，旧执行不能覆盖新执行。回读实际提交的正文、状态和回执，成功才报告“已保存”。失败保留同一目标，能记录时block真实原因并写回；未通过不能假装完成。\n${management||'管理仓库未设置'} 的勾选仅控制查询；停写需暂停实际任务。每日完成、章节文件今天更新、平台已发布分开记录；不自动投稿、不购买额度。`;
 }
 export function repairPrompt(entry){return `恢复 ${entry.repository_url} 的最新正式状态，先读AGENTS.md和docs/每日自动更新.md。检查今天完成回执和book/daily/active.json。已完成就结束；还在运行或状态不明先核实，不并行生成同一章。原执行已确认停止后，使用daily_update.py begin --resume-stopped恢复同一目标，不重置原修订次数，不另起下一章。实际完成检查、采用后finish，重建索引，原子写回并回读。不能以聊天回复替代仓库完成证据。`;}
 export function checkerPrompt(management,branch){

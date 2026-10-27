@@ -77,7 +77,22 @@ def active_record(root):
     return ns.read_json(path) if path.exists() else None
 
 
+def validate_active(state, active):
+    ns.require(isinstance(active, dict) and active.get("book_id") == state["book_id"] and
+               active.get("type") == "novel-daily-task-v1" and
+               active.get("status") in ("running", "blocked", "completed"), "执行记录与小说身份不符或状态无效。")
+    n, baseline = active.get("chapter"), active.get("baseline_count")
+    ns.require(type(n) is int and type(baseline) is int and baseline >= 0 and n == baseline + 1 and
+               isinstance(active.get("run_id"), str) and bool(re.fullmatch(r"[A-Za-z0-9_-]{8,100}", active["run_id"])),
+               "执行编号或目标章无效。")
+    ns.require(active.get("start_date") == date_of(active["started_at"]) and
+               active.get("work_id") == state["book_id"] + ":" + active["start_date"] + ":" + str(n),
+               "执行记录的开始日期或任务绑定无效。")
+    return active
+
+
 def finish_locked(root, state, active):
+    validate_active(state, active)
     n = active["chapter"]
     ns.require(len(state["chapters"]) == n, "只能为刚完成的目标章出具回执；存在额外章节需人工核实。")
     item, gate = formal_evidence(root, state, n)
@@ -113,16 +128,33 @@ def begin(project, resume_stopped=False):
         existing = root / "daily" / (today + ".json")
         if existing.exists():
             receipt = verify_receipt(root, state, ns.read_json(existing))
+            # A stop between immutable receipt creation and active update must
+            # not leave tomorrow trapped in yesterday's running target.
+            active = active_record(root)
+            if active and active.get("run_id") == receipt["run_id"] and active.get("status") != "completed":
+                result = finish_locked(root, state, active)
+                result["action"] = "recovered_completion"
+                return result
             return {"action": "already_completed", "chapter": receipt["chapter"], "date": today, "run_id": receipt["run_id"]}
         active = active_record(root)
         if active:
-            ns.require(active.get("book_id") == state["book_id"] and active.get("type") == "novel-daily-task-v1", "执行记录与小说身份不符。")
-            if active["status"] in ("running", "blocked"):
+            validate_active(state, active)
+            completed_missing_receipt = False
+            if active["status"] == "completed":
+                receipt_path = active.get("receipt_path")
+                expected_path = "daily/" + date_of(active["completed_at"]) + ".json"
+                ns.require(receipt_path == expected_path, "完成执行的回执路径无效。")
+                completed_missing_receipt = not (root / receipt_path).exists()
+                if not completed_missing_receipt:
+                    old = verify_receipt(root, state, ns.read_json(root / receipt_path))
+                    ns.require(old["run_id"] == active["run_id"] and old["chapter"] == active["chapter"], "完成执行和回执不是同一个任务。")
+            if active["status"] in ("running", "blocked") or completed_missing_receipt:
                 # 回执丢失时依据 adopt 实际时间恢复，不能把昨日采用改记为今天。
                 if str(active["chapter"]) in state["chapters"]:
                     result = finish_locked(root, state, active)
                     result["action"] = "recovered_completion"
                     return result
+                ns.require(active["status"] != "completed", "执行标为完成但目标章不存在，停止重复开写。")
                 if not resume_stopped:
                     return dict(active, action="verify_in_progress", note="先确认旧执行是否停止；不得因为超时自动抢占。")
                 ns.require(active["chapter"] == len(state["chapters"]) + 1 and prefix_fingerprint(state, active["baseline_count"]) == active["baseline_fingerprint"], "恢复目标与当前正式状态不匹配。")
@@ -155,7 +187,10 @@ def finish(project, run_id):
 def block(project, run_id, reason):
     root, _ = load(project)
     with ns.writer_lock(root):
+        _, state = load(project)
         active = active_record(root)
+        if active:
+            validate_active(state, active)
         ns.require(active and active.get("run_id") == run_id and active.get("status") != "completed", "执行编号已变化或已经完成。")
         reason = re.sub(r"(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]+", "[凭证已隐去]", reason.strip())[:2000]
         ns.require(reason, "记录真实的中断原因。")

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {GitHubClient,HubError,dayInShanghai,validDay,safeBranch,blankRegistry,validateRegistry,validateChatURL,encodeLocator,decodeLocator,sha256,loadBook,inspectBook,inspectRegistry,registryFingerprint,reportState,saveRegistry,STATUS,validateReaderURL,validateLocalBackup,randomId,suggestedChapter} from '../dist/hub-core.mjs';
+import {GitHubClient,HubError,dayInShanghai,validDay,safeBranch,blankRegistry,validateRegistry,validateChatURL,encodeLocator,decodeLocator,sha256,loadBook,inspectBook,inspectRegistry,registryFingerprint,reportState,saveRegistry,STATUS,validateReaderURL,validateLocalBackup,randomId,suggestedChapter,inspectExecution,writingPrompt} from '../dist/hub-core.mjs';
 import {SnapshotClient,reportBundle,preserveValidStates} from '../../tools/check_updates.mjs';
 const now=new Date('2026-10-26T12:00:00Z'),commit='a'.repeat(40);
 const entry=()=>({id:'entry_test',book_id:'synthetic_test_book',title:'合成机制测试',repository_url:'https://github.com/example/synthetic-test',branch:'main',enabled:true,expected_time:'09:00',grace_minutes:60,effective_from:'2026-10-25',baseline:{chapter_count:0,commit,captured_at:'2026-10-25T12:00:00Z'}});
@@ -57,3 +57,31 @@ test('a race at branch update is surfaced instead of force overwritten',async()=
 test('local backup restore strips credential fields and validates chat and money',()=>{const input={type:'novel-hub-local-backup-v1',registry:registry(),config:{repository_url:'https://github.com/example/management',branch:'main',token:'TEST_SECRET'},chats:{entry_test:'https://chatgpt.com/c/test'},ledger:[],reader_url:'https://example.com/reader.html'};assert.equal(JSON.stringify(validateLocalBackup(input)).includes('TEST_SECRET'),false);input.chats.entry_test='https://evil.example/c/test';assert.throws(()=>validateLocalBackup(input));});
 test('reader URL does not allow credentials, queries or non-http schemes',()=>{assert.equal(validateReaderURL('https://example.com/'),'https://example.com/reader.html');for(const v of ['https://user:secret@example.com/reader.html','https://example.com/reader.html?token=secret','ftp://localhost/reader.html'])assert.throws(()=>validateReaderURL(v));assert.match(randomId(),/^[a-f0-9]{32}$/);});
 test('copy progress at the last chapter does not jump back to chapter one',()=>{const chapters=[{number:1},{number:2},{number:3}];assert.equal(suggestedChapter(chapters,{chapter:2}).number,3);assert.equal(suggestedChapter(chapters,{chapter:3}).number,3);assert.equal(suggestedChapter(chapters,null).number,1);assert.equal(suggestedChapter([],null),null);});
+
+test('fixed feedback links survive validation while unsafe targets are rejected',()=>{
+ const input=registry();input.books[0].feedback_url='https://chatgpt.com/c/task-feedback';
+ assert.equal(validateRegistry(input).books[0].feedback_url,input.books[0].feedback_url);
+ input.books[0].feedback_url='https://evil.example/c/task';assert.throws(()=>validateRegistry(input));
+});
+test('writing instructions reuse one task and never claim to set the model or original thread',()=>{
+ const prompt=writingPrompt({...entry(),feedback_url:'https://chatgpt.com/c/task-feedback'},'https://github.com/example/manager');
+ for(const required of ['已有就复用','recovered_completion','GitHub','最近三章全文','最多3轮','未验证','不承诺一定返回','task-feedback'])assert.ok(prompt.includes(required),required);
+});
+test('execution verification is optional and proves real completion independent of query plan settings',async()=>{
+ const f=await fixture(),r=await inspectExecution({...entry(),enabled:false,effective_from:'2099-01-01'},{now,client:f.client()});
+ assert.equal(r.status,'completed');assert.equal(r.chapter,1);assert.equal(r.evidence.run_id,f.receipt.run_id);assert.equal(r.commit,commit);
+});
+test('execution verification rejects tampered body instead of claiming the task wrote a chapter',async()=>{
+ const f=await fixture();f.files['book/'+f.receipt.body_path].text+='篡改';
+ assert.equal((await inspectExecution(entry(),{now,client:f.client()})).status,'unknown');
+});
+test('running execution is explicitly a record, not proof of a live worker',async()=>{
+ const f=await fixture();f.files['book/daily/2026-10-26.json']={missing:true};
+ writeJSON(f,'book/daily/active.json',{type:'novel-daily-task-v1',book_id:entry().book_id,run_id:'synthetic_run',chapter:2,status:'running'});
+ const result=await inspectExecution(entry(),{now,client:f.client()});assert.equal(result.status,'pending');assert.match(result.reason,/不能证明任务仍存活/);
+});
+test('completed active without its receipt requests recovery rather than a new chapter',async()=>{
+ const f=await fixture();f.files['book/daily/2026-10-26.json']={missing:true};
+ writeJSON(f,'book/daily/active.json',{type:'novel-daily-task-v1',book_id:entry().book_id,run_id:f.receipt.run_id,chapter:1,status:'completed',completed_at:f.receipt.completed_at});
+ const result=await inspectExecution(entry(),{now,client:f.client()});assert.equal(result.status,'unknown');assert.equal(result.error_code,'missing_receipt');
+});

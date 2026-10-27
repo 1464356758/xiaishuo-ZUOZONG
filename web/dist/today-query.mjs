@@ -33,6 +33,7 @@ export function savedQuery(registry){
 }
 export async function queryState(report,registry,now=new Date()){
   if(!report)return {fresh:false,label:'尚未查询今天更新'};
+  if(report.complete===false)return {fresh:false,label:'查询尚未完成'};
   if(Date.parse(report.checked_at)>new Date(now).valueOf()+60000)return {fresh:false,label:'查询时间异常，请重新查询'};
   if(report.date!==dayInShanghai(now))return {fresh:false,label:'上次查询日期 '+report.date};
   if(report.selection_fingerprint!==await selectionFingerprint(registry))return {fresh:false,label:'勾选已变化，请重新查询'};

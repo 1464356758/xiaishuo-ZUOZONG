@@ -45,3 +45,8 @@ test('a query-record-only save persists history with one guarded write',async()=
  client.putFile=async(path,text,{expectedHead})=>{writes++;assert.equal(path,'books.json');assert.equal(expectedHead,head);saved=text;return {commit:change,observed_commit:change};};
  const result=await saveRegistry(client,rememberQuery(reg,report),{branch:'main',baseFileHash:await sha256(original)});assert.equal(writes,1);assert.equal(result.registry.query_history.length,1);assert.equal(JSON.parse(saved).query_history[0].observations[0].status,'updated');
 });
+
+test('partial query progress cannot become a finished fresh result',async()=>{
+ const r={complete:false,date:'2026-10-26',checked_at:'2026-10-26T12:00:00Z',results:[]};
+ assert.equal((await queryState(r,{books:[]},new Date('2026-10-26T12:01:00Z'))).fresh,false);
+});

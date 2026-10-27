@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from unittest.mock import patch
 
 from test_novel_state import WorkspaceFixture, ns
 import test_serial_release as serial_fixtures
@@ -78,6 +79,77 @@ class DailyTests(WorkspaceFixture):
         recovered = daily.begin(self.project)
         self.assertEqual(recovered["action"], "recovered_completion")
         self.assertEqual(recovered["chapter"], 1)
+
+    def test_completed_active_with_lost_receipt_recovers_instead_of_starting_next(self):
+        task = daily.begin(self.project)
+        self.release(1)
+        receipt = daily.finish(self.project, task["run_id"])
+        (self.root / "daily" / (receipt["date"] + ".json")).unlink()
+        recovered = daily.begin(self.project)
+        self.assertEqual(recovered["action"], "recovered_completion")
+        self.assertEqual(recovered["chapter"], 1)
+        self.assertEqual(recovered["run_id"], task["run_id"])
+        self.assertEqual(recovered["completed_at"], receipt["completed_at"])
+        self.assertEqual(daily.begin(self.project)["action"], "already_completed")
+
+    def test_receipt_saved_before_active_update_recovers_and_allows_the_next_day(self):
+        task = daily.begin(self.project)
+        self.release(1)
+        receipt = daily.finish(self.project, task["run_id"])
+        active = daily.active_record(self.root)
+        active["status"] = "running"
+        active.pop("completed_at")
+        active.pop("receipt_path")
+        ns.atomic_json(self.root / "daily/active.json", active)
+        recovered = daily.begin(self.project)
+        self.assertEqual(recovered["action"], "recovered_completion")
+        self.assertEqual(recovered["chapter"], 1)
+        self.assertEqual(daily.active_record(self.root)["status"], "completed")
+        tomorrow = (datetime.fromisoformat(receipt["completed_at"]) + timedelta(days=1)).isoformat()
+        with patch.object(daily, "stamp", return_value=tomorrow):
+            self.assertEqual(daily.begin(self.project)["chapter"], 2)
+
+    def test_lost_yesterday_receipt_does_not_open_a_second_target_during_recovery(self):
+        task = daily.begin(self.project)
+        self.release(1)
+        past = datetime.now(timezone.utc) - timedelta(days=1)
+        state = ns.load_state(self.root)
+        state["chapters"]["1"]["adopted_at"] = past.isoformat(timespec="seconds")
+        ns.atomic_json(self.root / "state.json", state)
+        active = daily.active_record(self.root)
+        active["started_at"] = (past - timedelta(minutes=1)).isoformat(timespec="seconds")
+        active["start_date"] = daily.date_of(active["started_at"])
+        active["work_id"] = state["book_id"] + ":" + active["start_date"] + ":1"
+        ns.atomic_json(self.root / "daily/active.json", active)
+        receipt = daily.finish(self.project, task["run_id"])
+        (self.root / "daily" / (receipt["date"] + ".json")).unlink()
+        recovered = daily.begin(self.project)
+        self.assertEqual(recovered["action"], "recovered_completion")
+        self.assertEqual(recovered["date"], receipt["date"])
+        self.assertEqual(daily.active_record(self.root)["chapter"], 1)
+
+    def test_completed_receipt_path_cannot_escape_its_actual_day(self):
+        task = daily.begin(self.project)
+        self.release(1)
+        receipt = daily.finish(self.project, task["run_id"])
+        (self.root / "daily" / (receipt["date"] + ".json")).unlink()
+        active = daily.active_record(self.root)
+        active["receipt_path"] = "../state.json"
+        ns.atomic_json(self.root / "daily/active.json", active)
+        with self.assertRaises(daily.ns.WorkspaceError):
+            daily.begin(self.project)
+
+    def test_invalid_active_identity_and_status_cannot_resume_or_block(self):
+        task = daily.begin(self.project)
+        original = daily.active_record(self.root)
+        for patch in ({"status": "made_up"}, {"book_id": "another_book"},
+                      {"chapter": 2}, {"work_id": "another_binding"}):
+            ns.atomic_json(self.root / "daily/active.json", dict(original, **patch))
+            with self.assertRaises(daily.ns.WorkspaceError):
+                daily.begin(self.project, resume_stopped=True)
+            with self.assertRaises(daily.ns.WorkspaceError):
+                daily.block(self.project, task["run_id"], "合成测试")
+        self.assertEqual(len(ns.load_state(self.root)["chapters"]), 0)
 
     def test_yesterday_adoption_cannot_be_reclassified_as_today(self):
         task = daily.begin(self.project)

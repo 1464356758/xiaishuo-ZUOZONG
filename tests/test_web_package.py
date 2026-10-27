@@ -19,6 +19,7 @@ class PackageTests(unittest.TestCase):
             result = package.build(ROOT, tmp)
             with zipfile.ZipFile(result["owner"]["path"]) as z:
                 self.assertIn("hub.js", z.namelist())
+                self.assertIn("reading-state.mjs", z.namelist())
                 self.assertIn("legacy.html", z.namelist())
                 self.assertIn(b"hub.js", z.read("index.html"))
                 self.assertIn("github-transport.mjs", z.namelist())
@@ -29,6 +30,7 @@ class PackageTests(unittest.TestCase):
                 self.assertNotIn("hub.js", z.namelist())
                 self.assertNotIn("legacy.html", z.namelist())
                 self.assertIn("hub-core.mjs", z.namelist())
+                self.assertIn("reading-state.mjs", z.namelist())
                 self.assertIn("github-transport.mjs", z.namelist())
                 self.assertIn("query-model.mjs", z.namelist())
                 self.assertIn(b"allowWrites:false", z.read("netlify/functions/github.mjs"))
@@ -69,7 +71,7 @@ class PackageTests(unittest.TestCase):
             if shutil.which("node"):
                 script = """import assert from 'node:assert/strict';
 const {default:worker}=await import(process.argv[1]);
-for(const path of ['/', '/reader.html', '/github-transport.mjs', '/query-model.mjs', '/today-query.mjs']){const r=await worker.fetch(new Request('https://novel.example'+path));assert.equal(r.status,200);if(path.endsWith('.html')||path==='/')assert.match(await r.text(),/novel-github-transport/);}
+for(const path of ['/', '/reader.html', '/reading-state.mjs', '/github-transport.mjs', '/query-model.mjs', '/today-query.mjs']){const r=await worker.fetch(new Request('https://novel.example'+path));assert.equal(r.status,200);if(path.endsWith('.html')||path==='/')assert.match(await r.text(),/novel-github-transport/);}
 const h=await worker.fetch(new Request('https://novel.example/api/github?health=1'));assert.equal((await h.json()).protocol,1);
 assert.equal((await worker.fetch(new Request('https://novel.example/unknown'))).status,404);
 """

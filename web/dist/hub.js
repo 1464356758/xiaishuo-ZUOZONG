@@ -1,4 +1,4 @@
-import {GitHubClient,HubError,SYSTEM_REPOSITORY,parseRepository,safeBranch,blankRegistry,validateRegistry,validateChatURL,dayInShanghai,tomorrow,loadRegistry,saveRegistry,loadBook,readFormalChapter,encodeLocator,STATUS,writingPrompt,repairPrompt,checkerPrompt,randomId,validateReaderURL,validateLocalBackup,inspectExecution} from './hub-core.mjs';
+import {GitHubClient,HubError,SYSTEM_REPOSITORY,parseRepository,safeBranch,blankRegistry,validateRegistry,validateChatURL,dayInShanghai,tomorrow,loadRegistry,saveRegistry,loadBook,readFormalChapter,encodeLocator,STATUS,newBookPrompt,writingPrompt,repairPrompt,checkerPrompt,randomId,validateReaderURL,validateLocalBackup,inspectExecution} from './hub-core.mjs';
 import {AutoSync,mergeRegistries} from './auto-sync.mjs';
 import {inspectTodayRegistry,selectionFingerprint,savedQuery,queryState,rememberQuery,QUERY_STATUS} from './today-query.mjs';
 import {normalizeQueryHistory,mergeQueryHistory} from './query-model.mjs';
@@ -28,8 +28,8 @@ const sync=new AutoSync({snapshot:()=>structuredClone(state.registry),canSave:()
   state.registry=current?result.registry:{...state.registry,revision:result.registry.revision,updated_at:result.registry.updated_at};state.dirty=!current;persist();
 },onStatus:(status,error)=>{state.syncStatus=status;state.saving=status==='saving';if(status==='error'){notice(error.message+' 修改已留在本机，请点击“重试同步”。',true);$('settingsStatus').textContent='保存未完成，请查看提示并重试同步。';}if(status==='saved'){notice('已自动保存到 GitHub。');$('settingsStatus').textContent='自动同步已启用，当前修改已保存并回读核对。';}if(status==='saving')$('settingsStatus').textContent='授权已启用，正在同步当前修改…';render();}});
 function changed(){state.registry=validateRegistry(state.registry);state.dirty=true;persist();sync.touch();render();}
-const labels={dashboard:['我的小说','我的小说。','点击书名看正文，新增和修改自动保存到 GitHub。'],prompts:['日更指令','每天，接着写。','选一本小说和执行时间，生成完整指令，复制到对应 GPT 工作聊天。'],reading:['阅读正文','接着读下去。','从已加入的小说中选择，直接阅读、复制和导出。'],delivery:['小说代发码','选择小说，就有代发码。','把代发链接交给合作人，文章随仓库更新。'],reports:['今日更新','查询今天更新。','勾选小说，点击查询，按最新章节的提交日期判断。'],settings:['同步设置','一次授权，自动保存。','GitHub 保存清单与设置，打开软件自动读取。']};
-function setView(name,open=true){if(!labels[name])return;state.view=name;for(const key of Object.keys(labels))$(key+'View').hidden=key!==name;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));$('viewLabel').textContent=labels[name][0];$('pageTitle').textContent=labels[name][1];$('pageSubtitle').textContent=labels[name][2];if(name==='delivery')generateCode();if(name==='prompts')updateWritingPrompt();if(name==='reading'&&open){const b=selectedBook('readBookSelect');if(b&&reading?.entry.id!==b.id)openReader(b);}}
+const labels={newBook:['新书指令','开始一本新书。','填入独立新书仓库，复制指令，连同初始化包发给新的 GPT 工作聊天。'],dashboard:['我的小说','我的小说。','点击书名看正文，新增和修改自动保存到 GitHub。'],prompts:['日更指令','每天，接着写。','选一本小说和执行时间，生成完整指令，复制到对应 GPT 工作聊天。'],reading:['阅读正文','接着读下去。','从已加入的小说中选择，直接阅读、复制和导出。'],delivery:['小说代发码','选择小说，就有代发码。','把代发链接交给合作人，文章随仓库更新。'],reports:['今日更新','查询今天更新。','勾选小说，点击查询，按最新章节的提交日期判断。'],settings:['同步设置','一次授权，自动保存。','GitHub 保存清单与设置，打开软件自动读取。']};
+function setView(name,open=true){if(!labels[name])return;state.view=name;for(const key of Object.keys(labels))$(key+'View').hidden=key!==name;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));$('viewLabel').textContent=labels[name][0];$('pageTitle').textContent=labels[name][1];$('pageSubtitle').textContent=labels[name][2];if(name==='delivery')generateCode();if(name==='prompts')updateWritingPrompt();if(name==='newBook')updateNewBookPrompt();if(name==='reading'&&open){const b=selectedBook('readBookSelect');if(b&&reading?.entry.id!==b.id)openReader(b);}}
 function selectedBook(id){return state.registry.books.find(b=>b.id===$(id).value);}
 function showText(title,text){$('textTitle').textContent=title;$('textContent').value=text;$('textDialog').showModal();}
 document.querySelectorAll('[data-view]').forEach(b=>action(b,()=>setView(b.dataset.view)));
@@ -145,6 +145,19 @@ $('bookForm').addEventListener('submit',async event=>{
   }catch(e){if(ticket.current()){$('bookFormError').textContent=e.message;$('bookFormError').hidden=false;}}finally{$('submitBook').disabled=false;$('submitBook').textContent='添加并打开正文';}
 });
 async function bookAction(book,value){if(value==='chat'){const url=validateChatURL(book.feedback_url||book.chat_url||legacy.chats?.[book.id]||'');if(!url){openBookDialog(book);return;}window.open(url,'_blank','noopener,noreferrer');}if(value==='schedule')openWritingPrompt(book);if(value==='repair')showText('补更指令',repairPrompt(book));if(value==='remove'&&await confirmAction('把《'+book.title+'》移出小说清单？不会删除仓库或正文。')){state.registry.books=state.registry.books.filter(b=>b.id!==book.id);changed();if(reading?.entry.id===book.id){exports.cancel();reading=null;readTicket++;chapterTicket++;$('readText').textContent='';$('readPublication').textContent='';$('readTitle').textContent='这部小说已移出清单';disableReading();}}}
+function updateNewBookPrompt(){
+  let text='',error='';const repository=$('newBookRepo').value.trim();
+  if(repository)try{text=newBookPrompt({repository,platform:$('newBookPlatform').value,preferences:$('newBookPreferences').value,management:config.repository_url});}catch(e){error=e.message;}
+  $('newBookPromptText').value=text;$('generateNewBookPrompt').disabled=$('copyNewBookPrompt').disabled=!text;
+  $('newBookPromptStatus').textContent=error|| (text?'指令已生成。复制后与初始化包一起发送。':'先填写这本新书的 GitHub 仓库链接。');
+  $('newBookRepo').setCustomValidity(error);return text;
+}
+async function copyNewBookPrompt(){const text=updateNewBookPrompt();if(!text){$('newBookRepo').reportValidity();return;}try{await copyText(text);$('newBookPromptStatus').textContent='已复制。请在新的 GPT 工作聊天中附加初始化包，再粘贴发送。';toast('新书指令已复制。');}catch(e){$('newBookPromptStatus').textContent='指令已生成，请在预览框中长按选中并复制。';throw e;}}
+action($('openNewBookPrompt'),()=>{setView('newBook');$('newBookRepo').focus();});
+for(const id of ['newBookRepo','newBookPreferences'])$(id).addEventListener('input',updateNewBookPrompt);
+$('newBookPlatform').addEventListener('change',updateNewBookPrompt);
+$('newBookPromptForm').addEventListener('submit',event=>{event.preventDefault();copyNewBookPrompt().catch(e=>toast(e.message));});
+action($('copyNewBookPrompt'),copyNewBookPrompt);
 function updateWritingPrompt({resetTime=false}={}){
   const book=selectedBook('writingBook'),changedBook=(book?.id||'')!==promptBookId;
   if(book&&(changedBook||resetTime))$('writingTime').value=book.expected_time||'09:00';

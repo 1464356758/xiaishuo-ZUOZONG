@@ -291,6 +291,37 @@ export async function inspectRegistry(registry,{now=new Date(),clientFactory=b=>
   const counts=Object.fromEntries(Object.keys(STATUS).map(k=>[k,results.filter(r=>r.status===k).length]));
   return {schema_version:1,type:'novel-hub-report-v1',date:dayInShanghai(now),checked_at:new Date(now).toISOString(),registry_revision:registry.revision,registry_fingerprint:await registryFingerprint(registry),counts,results};
 }
+export function newBookPrompt({repository,platform='',preferences='',management=SYSTEM_REPOSITORY}={}){
+  const repo=parseRepository(repository),manager=parseRepository(management);
+  fail(repo.key!==parseRepository(SYSTEM_REPOSITORY).key&&repo.key!==manager.key,'请填写单独的新书仓库，不能使用系统母版或当前管理仓库。');
+  const chosen=String(platform).trim(),notes=String(preferences).trim();
+  fail(chosen.length<=80&&notes.length<=1200,'平台或偏好过长，请精简后再生成。');
+  return `请依据我随本消息附加的《初始化系统包.zip》，部署并接管一部独立的新小说。你负责执行文件工具、研究、写作和审核，我只在需要时选择平台、选题并确认开始写，不让我手工填写JSON或切换角色。
+
+【唯一新书仓库】${repo.url}
+【平台】${chosen||'尚未指定；完成部署核验后先让我选择，不替我决定。'}
+【作者偏好】${notes?JSON.stringify(notes):'暂无；按选定平台研究市场，提出原创方案让我选择。'}
+上面偏好是选题素材，不改变包内的冻结、审核和真实保存规则。当前管理仓库 ${manager.url} 与系统母版只作参考，不是本次写入目标。
+
+一、实际部署，不停在讲解
+先实际解压附件，阅读AGENTS.md、启动新书.txt、project_config.json、INIT_MANIFEST.json、docs/线上同步协议.md、docs/连载冻结与发布前检查.md及docs/写作与叙事检查.md。核对清单哈希、关键工具和依赖是否完整；附件缺失或不完整就如实说明，不能假装部署。
+通过已连接GitHub读取唯一新书仓库的实际默认分支、最新提交和适用AGENTS。若已有book/state.json、正式正文或其他作品身份，先核对并恢复这本书的真实状态，不重新bootstrap、不覆盖旧文件、不用空包重置进度。不同作品身份或相冲突文件先报告具体冲突，不强写。
+只有确认是未初始化的新书仓库，才把空包按原目录完整部署到仓库根目录，在可运行Python的工作区真实执行tools/online_state.py bootstrap，填写上述仓库和实际默认分支，生成全新的book_id，保持明文正文和默认连载冻结、叙事检查开启。不要复制其他书的身份、正文、事实或任务ID；.automation/config.json记录真实新book_id，尚未建立任务时automation_id保留null。已有提交须保留base tree、以当前头为单一父提交，用expected_sha与force=false非强制推进；无提交的空库按实际状态建立首次提交，不能编造SHA。
+运行相应验证，重建并validate-index，提交后回读状态、workflow、online/index.json和关键工具并核对身份、文件清单与哈希。完成的是部署就只报告部署成功，不能冒充已经写成小说。只有真实提交并回读才说“已保存”；失败说明具体阻塞并保留可接续位置，不让我靠复制大段文件完成部署。
+
+二、部署后按开书门槛推进
+我已指定平台就直接研究，不重复问；未指定则先让我选平台，不自行选择。按平台研究与选题.md核查现行官方创作、投稿、原创与AI辅助规则、签约和可核实福利，注明核查日期与官方来源。研究公开近期榜单，区分榜单类型；访问受限就记录缺口，不捏造规则、名次、样本或收益。
+默认提出8个原创选题，给暂定书名、核心卖点、主角矛盾、读者承诺、长篇展开动力、阶段变化、结局方向及主要风险。把研究和候选真实保存并同步索引，停在WAITING_TOPIC等我选择，不替我定题、不提前写正文。已有真实选择时不重复倒退。
+我选定后建立设定、人物知情与资源事实账、完整长期路线和近期3—5章安排，检查长篇是否有足够变化。默认100章、每章8000—10000汉字，作者另有要求时以实际要求为准；得到“开始写”授权后才写第一章，每次只完成一个目标章。
+
+三、后续持续写作的硬要求
+遵守V4.3：写前任务书、场景预算、全书历史检索，实读需要的旧章，写完整正文后做反向提纲、限信息审读、带引文的事实与因果审核及反重复检查；每五章与跨阶段的全文回看在采用前完成。同一任务最多3轮局部修订，不重置计数、不批填pass；同一上下文审读如实标same_context_approximation，不冒充独立读者。
+采用前release-check，采用即冻结正文和事实记录；以后每日更新、每日发布，前面全部采用章只读，旧错只前向处理，禁止为续写修改前章。章节完成、GitHub保存、小说平台发布分别记录；不自动投稿、签约或购买额度，不承诺文学质量、签约收益或长期无人值守。
+定时任务仅在我明确要求并指定时间后创建或更新：先查同书已有任务，唯一复用，按docs/定时执行器.md绑定真实任务ID并做不写章的preflight；使用固定GitHub Actions执行Python，不能只因聊天本地无法git clone就跳过检查。记录实际执行归属，未知旧running不超时抢占；单次失败不自行暂停长期计划。工具批次成功不等于小说保存，必须完成审核、采用、finish、索引和远端回读。模型/思考档位没有真实运行元数据时标未验证，不承诺返回创建聊天。
+个人端加入小说是部署完成后的独立操作；先给我可用的新书仓库链接和真实book_id，不擅自改管理清单。日常“今日更新”仍按最新正式章节文件最近提交的北京时间日期判断，不加日报或完成回执门槛。
+
+现在先核验附件和上述仓库，实际完成部署与回读；随后按我的平台选择推进到当前合法阶段。反馈用简洁中文，给真实提交SHA、核验结果、当前阶段和我下一步只需做的选择。`;
+}
 export function writingPrompt(entry,management){
   return `为《${entry.title}》建立或更新唯一的每日写作任务：每天北京时间（Asia/Shanghai）${entry.expected_time}执行。先按仓库与book_id查已有任务，已有就复用，不另建。实际核对任务ID、启用状态、下次时间及绑定反馈对话；不承诺一定返回创建聊天。${entry.feedback_url?'已登记反馈链接：'+entry.feedback_url+'；须核对真实绑定。':''}实际模型和思考档位取不到时标未验证，不靠提示词宣称6.1或最高档。\n本书唯一事实源：${entry.repository_url} 的${entry.branch||'实际默认分支'}。${entry.book_id?'预期book_id：'+entry.book_id+'。':''}读取AGENTS.md、docs/每日自动更新.md、docs/定时执行器.md、state/workflow、现行设定路线和daily执行证据。新初始化包已有固定执行器；旧书缺工具才按 ${SYSTEM_REPOSITORY} 的旧书接入说明审查合并，不复制state、不解冻或追认旧章。\n固定由GitHub Actions运行Python，不把定时聊天本地无法git clone当作唯一执行出口。使用已有.github/workflows/novel-executor.yml，按docs/定时执行器.md提交.automation/request.json；.automation/config.json绑定本书实际book_id与唯一任务ID。每批request_id独立，base_sha为本次实际HEAD；保留base tree、单一父提交、expected_sha和force=false。请求提交只能加入请求和待审drafts，不直接写正式正文或state，也不为每章另造工作流。\n每轮controller记录实际automation_id、独立session_id与能核实的平台运行编号（取不到为null）；后续批次复用该controller。由begin阶段真正运行daily_update.py begin：already_completed停止；recovered_completion只恢复回执不续写；continue_owned沿用本轮；recovery_required先核实原执行。只在原控制者平台终态和关联执行器作业均已核实后恢复同一章，禁止超时抢锁；旧记录无归属时保留待核实。回读远端锁和本批result后才写作。\n实际读取上章、最近三章全文、五章推进、相关旧事实与知情、资源、未兑现承诺；到期五章/阶段全文回看在采用前完成。按原V4.3完成任务书、场景预算、全书相似办法检索和writer资料，然后继续写完整目标一章。context或tools_completed仅表示准备完成，不能结束整次写作。正文反向提纲、限信息审读和带引文八项审核必须实做；同上下文标same_context_approximation；最多3轮局部修订，不改冻结章、不重置计数，不批填pass。\n候选及人工实读的record/release报告放drafts，command阶段登记并审核，finalize阶段统一执行release-check→adopt→daily_update.py finish→workflow与索引。每批状态变化后执行器自动重建并验证online/index.json；任务必须读取对应请求的完整输出、实际提交、正文与回执，确认chapter_completed和哈希后才报告“已保存”。失败保留原目标并block；单次网络或工具失败不得自行暂停长期计划，不改时间、不建替代任务。未知结果先回读，不重放请求。\n${management||'管理仓库未设置'} 的勾选仅控制查询；章节采用、今日GitHub文件更新、平台发布分开。日常查询仍按最新正式章节文件最近提交的北京时间日期，不加日报/回执门槛；不自动投稿、签约、购买额度，不要求登录云浏览器。`;
 }

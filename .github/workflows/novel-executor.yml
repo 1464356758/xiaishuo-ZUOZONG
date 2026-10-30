@@ -5,6 +5,7 @@ on:
       - '.automation/request.json'
 permissions:
   contents: write
+  actions: read
 concurrency:
   group: novel-task-executor-${{ github.repository }}
   cancel-in-progress: false
@@ -24,6 +25,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: Execute one bound request
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: python3 tools/task_executor.py --event-sha "$TASK_SOURCE_SHA" --branch "$TASK_BRANCH"
       - name: Persist and read back without force
         shell: bash

@@ -31,7 +31,7 @@ class ExecutorTests(WorkspaceFixture):
         ns.atomic_json(self.root / "workflow.json", {"schema_version": 1, "revision": 0, "book_id": ns.load_state(self.root)["book_id"],
                        "phase": "WRITING", "platform": "synthetic", "selected_topic": {"id": "SYNTHETIC"}, "research_path": None, "topics_path": None,
                        "chapter": 1, "history": [], "updated_at": "2026-01-01T00:00:00+00:00"})
-        for name in ("novel_state.py", "serial_release.py", "narrative_quality.py", "daily_update.py", "online_state.py"):
+        for name in ("novel_state.py", "serial_release.py", "narrative_quality.py", "daily_update.py", "online_state.py", "operator_recovery.py"):
             target = self.project / "tools" / name; target.parent.mkdir(exist_ok=True)
             shutil.copyfile(Path(executor.__file__).parent / name, target)
         self.owner = {"kind": "automation", "automation_id": "synthetic_automation_001", "session_id": "synthetic_session_001", "platform_run_id": "synthetic_platform_run_001"}
@@ -94,6 +94,107 @@ class ExecutorTests(WorkspaceFixture):
         result = self.execute("begin", stopped_evidence={"source": "timeout", "status": "completed"})
         self.assertEqual(result["business_status"], "recovery_required")
         self.assertEqual(original, (self.root / "daily/active.json").read_bytes())
+
+    def operator_grant(self):
+        active = executor.read_active(self.project)
+        grant = {"schema_version": 1, "type": "novel-operator-recovery-v1",
+                 "operation": "revoke_and_resume_same_chapter", "authorization_basis": "explicit_author_repair_request",
+                 "author_instruction": "合成测试：请修复旧任务并沿原章接续。", "old_runtime_status": "unverified",
+                 "repository": "example-user/synthetic-book", "reviewed_head": "a" * 40,
+                 "book_id": active["book_id"], "automation_id": self.owner["automation_id"],
+                 "old_run_id": active["run_id"], "chapter": active["chapter"], "baseline_count": active["baseline_count"],
+                 "baseline_fingerprint": active["baseline_fingerprint"],
+                 "expected_state_sha256": executor.operator_recovery.text_hash(self.root / "state.json"),
+                 "expected_active_sha256": executor.operator_recovery.text_hash(self.root / "daily/active.json"),
+                 "executor_evidence": {"source": "github_actions_api", "all_jobs_terminal": True,
+                                       "runs": [{"id": 123, "status": "completed"}]}}
+        path = ".automation/recoveries/synthetic_author_repair_001.json"
+        ns.atomic_json(self.project / path, grant)
+        return path, grant
+
+    def recover(self, path):
+        req = self.request("recover", recovery_grant=path)
+        req["controller"] = {"kind": "maintenance", "session_id": "synthetic_maintenance_001"}
+        with patch.object(executor.operator_recovery, "verify_jobs_quiescent", return_value={"fresh_github_check": False, "mode": "synthetic_test"}):
+            return executor.apply_request(self.project, req, "b" * 40)
+
+    def test_author_repair_archives_old_run_and_next_task_claims_same_chapter(self):
+        import daily_update
+        self.release(1); daily_update.begin(self.project)
+        path, _, _, _ = self.prepare(2)
+        path.write_text("乙取走钥匙，支付铜钱，承担后果。", encoding="utf-8")
+        ns.candidate(self.root, 2, path, request="合成返修", repairing=True)
+        old_active = (self.root / "daily/active.json").read_text(); old_state = (self.root / "state.json").read_bytes()
+        path, grant = self.operator_grant(); result = self.recover(path)
+        self.assertEqual(result["business_status"], "recovery_ready")
+        ready = executor.read_active(self.project)
+        self.assertNotEqual(ready["run_id"], grant["old_run_id"])
+        self.assertEqual(ready["status"], "blocked"); self.assertNotIn("controller", ready)
+        audit = ns.read_json(self.project / result["audit_path"])
+        self.assertEqual(audit["old_active_text"], old_active)
+        self.assertEqual(audit["old_runtime_status"], "unverified")
+        self.assertEqual((self.root / "state.json").read_bytes(), old_state)
+        self.assertNotIn("stopped_confirmed", json.dumps(ready))
+        resumed = self.begin(); self.assertEqual(resumed["business_status"], "resumed")
+        self.assertEqual(resumed["recovery_mode"], "operator_revocation")
+        self.assertNotEqual(resumed["run_id"], ready["run_id"])
+        self.assertEqual(resumed["chapter"], 2)
+        self.assertEqual(executor.read_active(self.project)["controller"], self.owner)
+        self.assertEqual((self.root / "state.json").read_bytes(), old_state)
+        self.assertEqual(ns.load_state(self.root)["tasks"]["2"]["repairs"], 1)
+        self.assertEqual(self.begin()["business_status"], "continue_owned")
+        self.assertEqual(self.recover(path)["executor_status"], "error")
+
+    def test_operator_recovery_needs_author_instruction_and_exact_lock(self):
+        import daily_update
+        daily_update.begin(self.project); original = (self.root / "daily/active.json").read_bytes()
+        path, grant = self.operator_grant(); grant["author_instruction"] = ""
+        ns.atomic_json(self.project / path, grant)
+        with self.assertRaises(executor.ns.WorkspaceError): self.recover(path)
+        self.assertEqual((self.root / "daily/active.json").read_bytes(), original)
+        grant["author_instruction"] = "合成作者要求修复"; grant["expected_active_sha256"] = "0" * 64
+        ns.atomic_json(self.project / path, grant)
+        self.assertEqual(self.recover(path)["executor_status"], "error")
+        self.assertEqual((self.root / "daily/active.json").read_bytes(), original)
+
+    def test_operator_recovery_rejects_changed_state_and_wrong_book_binding(self):
+        import daily_update
+        daily_update.begin(self.project); original = (self.root / "daily/active.json").read_bytes()
+        path, grant = self.operator_grant(); grant["book_id"] = "another-book"
+        ns.atomic_json(self.project / path, grant)
+        with self.assertRaises(executor.ns.WorkspaceError): self.recover(path)
+        path, grant = self.operator_grant(); grant["expected_state_sha256"] = "0" * 64
+        ns.atomic_json(self.project / path, grant)
+        self.assertEqual(self.recover(path)["executor_status"], "error")
+        self.assertEqual((self.root / "daily/active.json").read_bytes(), original)
+
+    def test_revoked_owner_cannot_write_and_changed_audit_cannot_be_claimed(self):
+        import daily_update
+        old = daily_update.begin(self.project); path, _ = self.operator_grant()
+        result = self.recover(path); ready = (self.root / "daily/active.json").read_bytes()
+        blocked = self.execute("block", run_id=old["run_id"], reason="合成旧控制者")
+        self.assertEqual(blocked["executor_status"], "error")
+        self.assertEqual((self.root / "daily/active.json").read_bytes(), ready)
+        archive = self.project / result["audit_path"]; archive.write_text(archive.read_text()+" ")
+        self.assertEqual(self.begin()["executor_status"], "error")
+        self.assertEqual((self.root / "daily/active.json").read_bytes(), ready)
+
+    def test_recovery_ready_cannot_be_claimed_with_a_changed_target(self):
+        import daily_update
+        daily_update.begin(self.project); path, _ = self.operator_grant(); self.recover(path)
+        active = executor.read_active(self.project); active["chapter"] += 1
+        ns.atomic_json(self.root / "daily/active.json", active)
+        self.assertEqual(self.begin()["executor_status"], "error")
+        self.assertNotIn("controller", executor.read_active(self.project))
+
+    def test_remote_recovery_refuses_another_live_writer(self):
+        import io
+        self.begin(); _, grant = self.operator_grant()
+        env = {"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": grant["repository"], "GITHUB_RUN_ID": "100", "GITHUB_TOKEN": "synthetic_token"}
+        response = {"total_count": 1, "workflow_runs": [{"id": 101, "path": ".github/workflows/novel-executor.yml", "status": "in_progress"}]}
+        with patch.dict(executor.os.environ, env), patch.object(executor.operator_recovery.urllib.request, "urlopen", return_value=io.StringIO(json.dumps(response))):
+            with self.assertRaisesRegex(executor.ns.WorkspaceError, "仍有未终结"):
+                executor.operator_recovery.verify_jobs_quiescent(grant)
 
     def test_bound_terminal_owner_can_resume_without_resetting_candidate_repairs(self):
         first = self.begin()

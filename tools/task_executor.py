@@ -20,6 +20,7 @@ import tempfile
 import daily_update as daily
 import novel_state as ns
 import online_state as online
+import operator_recovery
 
 PROTOCOL = "novel-task-executor-v1"
 ID = re.compile(r"[A-Za-z0-9_-]{8,100}")
@@ -57,10 +58,10 @@ def validate_request(project, request):
     require(isinstance(request, dict) and request.get("schema_version") == 1, "执行请求格式无效。")
     require(isinstance(request.get("request_id"), str) and bool(ID.fullmatch(request["request_id"])), "request_id须为8—100位独立请求编号。")
     require(isinstance(request.get("base_sha"), str) and bool(re.fullmatch(r"[0-9a-f]{40}", request["base_sha"])), "请求必须绑定实际基础提交。")
-    require(request.get("phase") in ("preflight", "begin", "command", "finalize", "block"), "执行阶段无效。")
+    require(request.get("phase") in ("preflight", "recover", "begin", "command", "finalize", "block"), "执行阶段无效。")
     owner = request.get("controller", {})
     require(isinstance(owner, dict), "缺少执行控制者。")
-    if request["phase"] == "preflight" and owner.get("kind") == "maintenance":
+    if request["phase"] in ("preflight", "recover") and owner.get("kind") == "maintenance":
         require(bool(ID.fullmatch(owner.get("session_id", ""))), "维护预检须有独立会话编号。")
     else:
         require(owner.get("kind") == "automation" and
@@ -75,7 +76,10 @@ def validate_request(project, request):
     state = ns.load_state(Path(project) / "book")
     require(request.get("book_id") == state["book_id"], "请求与本书身份不一致。")
     config_path = Path(project) / ".automation/config.json"
-    if request["phase"] != "preflight":
+    if request["phase"] == "recover":
+        require(owner.get("kind") == "maintenance", "撤销旧执行只接受作者授权的维护请求。")
+        operator_recovery.read_grant(project, request.get("recovery_grant"))
+    elif request["phase"] != "preflight":
         require(config_path.is_file(), "先登记本书实际唯一任务绑定，不在运行时猜测。")
         cfg = ns.read_json(config_path)
         require(cfg.get("book_id") == state["book_id"] and
@@ -107,6 +111,9 @@ def stopped_proof(active, proof):
 
 
 def begin_owned(project, request):
+    claimed = operator_recovery.claim_ready(project, request["controller"])
+    if claimed is not None:
+        return claimed
     result = daily.begin(project)
     if result["action"] == "verify_in_progress":
         if owner_equal(result.get("controller"), request["controller"]):
@@ -199,10 +206,14 @@ def _run(project, request, result):
     if phase == "preflight":
         result["business_status"] = "preflight_passed"
         result["active_status"] = (read_active(project) or {}).get("status")
+    elif phase == "recover":
+        result.update(operator_recovery.prepare(project, request.get("recovery_grant")))
     elif phase == "begin":
         action = begin_owned(project, request)
         result.update(business_status=action["action"], daily_action=action["action"],
                       run_id=action.get("run_id"), chapter=action.get("chapter"))
+        if action.get("recovery_mode"):
+            result.update(recovery_mode=action["recovery_mode"], revoked_run_id=action["revoked_run_id"])
     elif phase == "command":
         assert_owner(project, request)
         commands = request.get("commands")

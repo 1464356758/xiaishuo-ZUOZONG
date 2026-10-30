@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {GitHubClient,HubError,dayInShanghai,validDay,safeBranch,blankRegistry,validateRegistry,validateChatURL,encodeLocator,decodeLocator,sha256,loadBook,inspectBook,inspectRegistry,registryFingerprint,reportState,saveRegistry,STATUS,validateReaderURL,validateLocalBackup,randomId,suggestedChapter,inspectExecution,writingPrompt} from '../dist/hub-core.mjs';
 import {SnapshotClient,reportBundle,preserveValidStates} from '../../tools/check_updates.mjs';
+import {repairPrompt} from '../dist/hub-core.mjs';
 const now=new Date('2026-10-26T12:00:00Z'),commit='a'.repeat(40);
 const entry=()=>({id:'entry_test',book_id:'synthetic_test_book',title:'合成机制测试',repository_url:'https://github.com/example/synthetic-test',branch:'main',enabled:true,expected_time:'09:00',grace_minutes:60,effective_from:'2026-10-25',baseline:{chapter_count:0,commit,captured_at:'2026-10-25T12:00:00Z'}});
 const registry=b=>({...blankRegistry(),books:b||[entry()]});
@@ -84,4 +85,29 @@ test('completed active without its receipt requests recovery rather than a new c
  const f=await fixture();f.files['book/daily/2026-10-26.json']={missing:true};
  writeJSON(f,'book/daily/active.json',{type:'novel-daily-task-v1',book_id:entry().book_id,run_id:f.receipt.run_id,chapter:1,status:'completed',completed_at:f.receipt.completed_at});
  const result=await inspectExecution(entry(),{now,client:f.client()});assert.equal(result.status,'unknown');assert.equal(result.error_code,'missing_receipt');
+});
+
+test('both readers reject a changed frozen state even when the index hash was rebuilt',async()=>{
+ for(const change of [s=>delete s.serialization.frozen['1'],s=>s.serialization.enabled=false,s=>s.serialization.frozen['1'].record_sha256='0'.repeat(64),s=>{delete s.serialization;s.config={serial_mode:true};}]){
+  const f=await fixture();change(f.state);writeJSON(f,'book/state.json',f.state);
+  f.manifest.source.state_sha256=await sha256(f.files['book/state.json'].text);writeJSON(f,'online/index.json',f.manifest);
+  await assert.rejects(loadBook(f.client()),e=>e.code==='invalid_frozen');
+ }
+});
+test('legacy nonserial reading remains available without claiming frozen protection',async()=>{
+ const f=await fixture();delete f.state.serialization;writeJSON(f,'book/state.json',f.state);
+ f.manifest.source.state_sha256=await sha256(f.files['book/state.json'].text);writeJSON(f,'online/index.json',f.manifest);
+ assert.equal((await loadBook(f.client())).manifest.chapters.length,1);
+});
+test('a maintenance checkpoint is distinguishable from an ordinary blocked job',async()=>{
+ const f=await fixture();f.files['book/daily/2026-10-26.json']={missing:true};
+ const active={type:'novel-daily-task-v1',book_id:entry().book_id,run_id:'recovery_checkpoint',chapter:2,status:'blocked',operator_recovery:{status:'ready',ready_run_id:'recovery_checkpoint',old_run_id:'revoked_execution',expected_state_sha256:f.manifest.source.state_sha256,grant_sha256:'a'.repeat(64),audit_sha256:'b'.repeat(64)}};
+ writeJSON(f,'book/daily/active.json',active);
+ const result=await inspectExecution(entry(),{now,client:f.client()});
+ assert.equal(result.status,'recovery_ready');assert.equal(result.chapter,2);assert.match(result.reason,/不代表章节已完成/);
+ active.operator_recovery.expected_state_sha256='0'.repeat(64);writeJSON(f,'book/daily/active.json',active);
+ assert.equal((await inspectExecution(entry(),{now,client:f.client()})).error_code,'invalid_recovery');
+});
+test('generated daily and repair instructions can consume an authorized maintenance checkpoint',()=>{
+ for(const prompt of [writingPrompt(entry(),'example/manager'),repairPrompt(entry())])for(const word of ['operator_recovery.status','operator_revocation','begin','不自行','返修次数'])assert.ok(prompt.includes(word),word);
 });

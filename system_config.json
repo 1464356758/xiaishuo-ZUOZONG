@@ -14,5 +14,7 @@
   "opening_hook_max_han": 800,
   "opening_core_max_han": 3000,
   "opening_impact_max_han": 3000,
-  "narrative_review_required": true
+  "narrative_review_required": true,
+  "opening_chapter_han_max": 4500,
+  "story_review_required": true
 }

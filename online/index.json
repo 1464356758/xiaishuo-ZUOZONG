@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "system_version": "4.3-quality",
+  "system_version": "4.4-opening",
   "initialized": false,
   "book": {
     "id": null,
@@ -9,7 +9,7 @@
     "selected_topic_id": null
   },
   "source": {
-    "repository_url": "https://github.com/1464356758/xiaishuo-ZUOZONG",
+    "repository_url": null,
     "branch": "main",
     "generated_at": null,
     "state_revision": 0,
@@ -25,10 +25,10 @@
   },
   "task": {
     "phase": "NOT_INITIALIZED",
-    "label": "空系统母版，V4.3已就绪",
+    "label": "等待初始化",
     "chapter": 1,
-    "detail": "已完成写作任务书与叙事检查升级，未创建小说或选择平台。",
-    "next_action": "收到明确开书指令后，使用启动新书.txt在独立新仓库初始化。",
+    "detail": "复制启动指令交给GPT，建立这本书的新身份。",
+    "next_action": "读取启动新书.txt，填入新仓库链接后bootstrap。",
     "updated_at": null
   },
   "chapters": [],

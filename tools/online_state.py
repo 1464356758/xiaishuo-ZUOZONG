@@ -154,6 +154,13 @@ def save_topics(project, path):
     with ns.writer_lock(Path(project) / "book"):
         wf = load_workflow(project)
         ns.require(wf["platform"] and wf["research_path"] and wf["selected_topic"] is None, "先保存平台研究，已有选定题材不得静默替换。")
+        state = ns.load_state(Path(project) / "book")
+        if state["config"].get("story_review_required"):
+            for item in items:
+                arc = item.get("opening_arc")
+                ns.require(isinstance(arc, dict) and all(ns.narrative_module().nonempty(arc.get(key))
+                           for key in ("first_effect", "countermove", "payoff", "distinctive_engine")),
+                           f"选题{item['id']}须交代前三章的首个结果、反击或代价、短线兑现与同题材差异。")
         data["platform"] = wf["platform"]
         encoded = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
         relative = "research/topics_" + ns.digest(encoded) + ".json"

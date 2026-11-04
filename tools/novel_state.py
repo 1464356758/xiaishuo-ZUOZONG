@@ -27,7 +27,7 @@ class WorkspaceError(ValueError):
 
 _SERIAL_MODULE = None
 _NARRATIVE_MODULE = None
-SYSTEM_VERSION = "4.3-quality"
+SYSTEM_VERSION = "4.4-opening"
 
 
 def narrative_module():
@@ -50,13 +50,23 @@ def serial_module():
 
 def serial_api():
     names = ("require", "digest", "han_count", "read_json", "atomic_json", "immutable_text", "inside",
-             "load_state", "verify_files", "writer_lock", "validate_record", "records", "quote_exists", "review_status", "narrative_module")
+             "load_state", "verify_files", "writer_lock", "validate_record", "records", "quote_exists", "review_status", "narrative_module",
+             "chapter_han_range")
     return SimpleNamespace(**{name: globals()[name] for name in names})
 
 
 def require(condition, message):
     if not condition:
         raise WorkspaceError(message)
+
+
+def chapter_han_range(config, chapter):
+    opening_max = config.get("opening_chapter_han_max")
+    if opening_max is not None and chapter <= 3:
+        return 1, opening_max
+    if config["strict_length"]:
+        return config["chapter_han_min"], config["chapter_han_max"]
+    return None
 
 
 def digest(text):
@@ -173,6 +183,11 @@ def init(root, title, overrides=None):
         require(0 <= config["book_han_min"] <= config["book_han_max"], "全书字数范围无效。")
         require(type(config["narrative_review_required"]) is bool, "narrative_review_required必须为布尔值。")
         require(not config["narrative_review_required"] or config["serial_mode"] is True, "叙事检查须与连载冻结一起启用。旧工程保持原检查，不静默追认。")
+        opening_max = config.get("opening_chapter_han_max")
+        require(opening_max is None or (type(opening_max) is int and opening_max > 0), "开篇章长上限须为正整数。")
+        story_review = config.get("story_review_required", False)
+        require(type(story_review) is bool and (not story_review or config["narrative_review_required"]),
+                "剧情审读须与叙事检查一起启用。")
         state = {"schema_version": 2, "book_id": str(uuid.uuid4()), "title": title,
                  "revision": 0, "config": config, "chapters": {},
                  "checkpoints": [], "needs_revalidation": [], "inputs": {},
@@ -383,8 +398,9 @@ def validate_record(root, state, text, record):
         require(quote_exists(text, event.get("quote")), "伏笔事件的引文不在当前正文内。")
     count = han_count(text)
     config = state["config"]
-    if config["strict_length"]:
-        require(config["chapter_han_min"] <= count <= config["chapter_han_max"], f"实测汉字数 {count} 不在配置区间。")
+    limits = chapter_han_range(config, chapter)
+    if limits is not None:
+        require(limits[0] <= count <= limits[1], f"第{chapter}章实测{count}汉字，不在{limits[0]}—{limits[1]}范围。")
     return count
 
 

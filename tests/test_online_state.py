@@ -35,7 +35,7 @@ class OnlineTests(unittest.TestCase):
         path=self.jsonfile('research.json',data);online.save_research(self.project,path);return data
 
     def topics(self,count=8):
-        return {'candidates':[dict(id=f'T{i+1:02d}',title=f'原创测试方向{i+1}',genre='测试',pitch='测试卖点',reader_promise='测试承诺',long_form_engine='测试动力',stage_variation='测试变化',risk='测试风险',opening_arc=dict(first_effect='测试结果',countermove='测试反击',payoff='测试兑现',distinctive_engine='合成差异')) for i in range(count)]}
+        return {'candidates':[dict(id=f'T{i+1:02d}',title=f'原创测试方向{i+1}',genre='测试',pitch='测试卖点',reader_promise='测试承诺',long_form_engine='测试动力',stage_variation='测试变化',risk='测试风险') for i in range(count)]}
 
     def test_bootstrap_is_idempotent(self):
         before=online.ns.load_state(self.project/'book');online.bootstrap(self.project,'https://github.com/example/novel');after=online.ns.load_state(self.project/'book')
@@ -127,10 +127,9 @@ class OnlineTests(unittest.TestCase):
             identities.append(state['book_id'])
             self.assertTrue(state['config']['serial_mode'])
             self.assertTrue(state['config']['narrative_review_required'])
-            self.assertTrue(state['config']['story_review_required'])
             self.assertEqual(online.ns.chapter_han_range(state['config'], 1), (1, 4500))
             self.assertEqual(online.ns.chapter_han_range(state['config'], 4), (8000, 10000))
-            self.assertEqual(json.loads((target/'project_config.json').read_text())['system_version'],'4.4-opening')
+            self.assertEqual(json.loads((target/'project_config.json').read_text())['system_version'],'4.4.1-opening')
             self.assertEqual(state['serialization']['frozen'],{})
             self.assertEqual(state['serialization']['published'],{})
             self.assertEqual(json.loads((target/'book/workflow.json').read_text())['phase'],'WAITING_PLATFORM')

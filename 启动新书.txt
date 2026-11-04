@@ -1,4 +1,4 @@
-接管我的GPT小说系统V4.4，GitHub是这部小说的唯一正式来源。
+接管我的GPT小说系统V4.4.1，GitHub是这部小说的唯一正式来源。
 
 需要建立每日计划时，先读docs/定时执行器.md。实际创建或复用唯一任务后，把真实book_id和automation_id登记到.automation/config.json，先经固定GitHub Actions执行器做不生成正文的preflight，再建立日更执行。单次网络故障不自动停用计划；旧running归属不明不擅自接管。
 

@@ -7,21 +7,6 @@ from pathlib import Path
 import re
 
 
-STORY_PLAN = {
-    "goal": "主角眼前必须解决的问题",
-    "choice": "主角将作出的关键选择及代价",
-    "payoff": "正文将兑现的具体结果",
-    "next_pressure": "由结果生出的下一步压力",
-}
-STORY_CHECKS = {
-    "mainline": "主线焦点",
-    "agency": "主角行动",
-    "scene_economy": "最弱段落与删减检查",
-    "payoff": "核心结果",
-    "next_pressure": "结果引出的续读理由",
-}
-
-
 def nonempty(value):
     return isinstance(value, str) and bool(value.strip())
 
@@ -114,22 +99,14 @@ def surface_scan(text):
 
 
 def brief_skeleton(state, a):
-    brief = brief_bindings(state, a)
-    budget = state["config"]["chapter_han_min"]
-    opening_max = state["config"].get("opening_chapter_han_max")
-    if opening_max is not None and brief["chapter"] <= 3:
-        budget = min(3500, opening_max)
-    brief.update(decision="pending", writer_brief="", hard_boundaries=[""], reader_promise="",
-                 history_queries=[""], scene_plan=[{"purpose": "", "target_han": budget}])
-    if state["config"].get("story_review_required"):
-        brief["story_plan"] = dict.fromkeys(STORY_PLAN, "")
-        if brief["chapter"] == 1:
-            brief["opening_trial"] = {
-                "options": [{"text": "", "reader_question": "", "weak_point": ""} for _ in range(2)],
-                "selected": None,
-                "reason": "",
-            }
-    return brief
+    bindings = brief_bindings(state, a)
+    config = state["config"]
+    budget = config["chapter_han_min"]
+    if bindings["chapter"] <= 3 and config.get("opening_chapter_han_max") is not None:
+        budget = min(3500, config["opening_chapter_han_max"])
+    return dict(bindings, decision="pending", writer_brief="",
+                hard_boundaries=[""], reader_promise="", history_queries=[""],
+                scene_plan=[{"purpose": "", "target_han": budget}])
 
 
 def validate_brief(state, brief, a):
@@ -149,24 +126,6 @@ def validate_brief(state, brief, a):
     queries = brief.get("history_queries")
     a.require(isinstance(queries, list) and (not state["chapters"] or queries) and all(query_terms(x) for x in queries), "非首章须准备有效历史检索词，不能只填标点；首章可留空列表。")
     prose = "\n".join([brief["writer_brief"], brief["reader_promise"], *boundaries, *[x["purpose"] for x in scenes]])
-    if state["config"].get("story_review_required"):
-        plan = brief.get("story_plan")
-        a.require(isinstance(plan, dict) and all(nonempty(plan.get(key)) for key in STORY_PLAN),
-                  "写前须说明主角目标、选择、要兑现的结果和结果带来的压力。")
-        prose += "\n" + "\n".join(plan[key] for key in STORY_PLAN)
-        if brief["chapter"] == 1:
-            trial = brief.get("opening_trial")
-            a.require(isinstance(trial, dict) and type(trial.get("selected")) is int
-                      and trial["selected"] in (1, 2) and nonempty(trial.get("reason")),
-                      "首章任务书须选择一份开场小样并写出取舍依据。")
-            options = trial.get("options")
-            a.require(isinstance(options, list) and len(options) == 2
-                      and all(isinstance(item, dict) and all(nonempty(item.get(key))
-                                  for key in ("text", "reader_question", "weak_point"))
-                              and 0 < a.han_count(item["text"]) <= 1000 for item in options)
-                      and options[0]["text"].strip() != options[1]["text"].strip(),
-                      "首章须实存两个不同的短开场，每份附读者问题和薄弱处。")
-            prose += "\n" + "\n".join(item["text"] for item in options)
     a.require(not surface_scan(prose), "干净任务书含制作字段、审稿标签或制作句；控制信息留在任务书元数据。")
     return brief
 
@@ -203,14 +162,7 @@ def current_brief(root, state, a):
 def writer_packet(root, state, a):
     brief, _ = current_brief(root, state, a)
     parts = ["# 本章写作任务", "书名：" + state["title"], brief["writer_brief"], "## 必须保留的故事边界", *brief["hard_boundaries"],
-             "## 本章读者体验", brief["reader_promise"]]
-    if state["config"].get("story_review_required"):
-        parts.append("## 本章必须写到的行动与后果")
-        parts.extend(f"{label}：{brief['story_plan'][key]}" for key, label in STORY_PLAN.items())
-        if brief["chapter"] == 1:
-            trial = brief["opening_trial"]
-            parts.extend(["## 选用的开场小样", trial["options"][trial["selected"] - 1]["text"]])
-    parts.append("## 场景安排")
+             "## 本章读者体验", brief["reader_promise"], "## 场景安排"]
     for i, scene in enumerate(brief["scene_plan"], 1):
         parts.append(f"{i}. {scene['purpose']}（约{scene['target_han']}汉字，按叙事需要调整）")
     if state["chapters"]:
@@ -262,7 +214,7 @@ def skeleton(root, state, text, record, a):
     brief, _ = current_brief(root, state, a)
     _, coverage = reader_packet(root, state, text, a)
     ev = {"chapter": record["chapter"], "sha256": a.digest(text), "quote": ""}
-    review = {"schema_version": 1,
+    return {"schema_version": 1,
             "actual_scenes": [{"event": "", "choice": "", "change": "", "evidence": [dict(ev)]}],
             "plan_comparison": "",
             "reader": {"mode": "pending", "limitation": "", "coverage": coverage,
@@ -273,50 +225,6 @@ def skeleton(root, state, text, record, a):
                         "queries": list(brief["history_queries"]), "comparisons": [], "no_match_reason": ""},
             "reader_updates": [], "reader_update_note": "",
             "surface_findings": [dict(item, decision="pending", reason="") for item in surface_scan(text)]}
-    if state["config"].get("story_review_required"):
-        n = record["chapter"]
-        review["story_review"] = {
-            "checks": {key: {"decision": "pending", "conclusion": "", "evidence": dict(ev)}
-                       for key in STORY_CHECKS},
-            "payoff_change": {"before": "", "after": "", "relation_to_promise": ""},
-        }
-        if n == 3:
-            review["story_review"]["opening_arc"] = {
-                "answered_question": "", "earned_result": "", "next_question": "",
-                "evidence": [dict(ev, chapter=k, sha256=coverage[str(k)]["text_sha256"])
-                             for k in (1, 2, 3)],
-            }
-    return review
-
-
-def validate_story_review(root, state, text, n, review, a):
-    story = review.get("story_review")
-    a.require(isinstance(story, dict), "缺少剧情推进审读。")
-    checks = story.get("checks")
-    a.require(isinstance(checks, dict), "缺少剧情推进结论。")
-    for key, label in STORY_CHECKS.items():
-        item = checks.get(key)
-        a.require(isinstance(item, dict) and item.get("decision") == "pass" and nonempty(item.get("conclusion")),
-                  f"{label}尚未通过。影响续读的结构问题须修改当前稿。")
-        evidence(root, state, text, n, item.get("evidence"), a, current_only=True)
-    change = story.get("payoff_change")
-    a.require(isinstance(change, dict) and all(nonempty(change.get(k)) for k in ("before", "after", "relation_to_promise"))
-              and change["before"].strip() != change["after"].strip(),
-              "须说明发生前后发生了什么变化，以及它兑现了哪项读者承诺。")
-    payoff = checks["payoff"]["evidence"]["quote"]
-    a.require(payoff != checks["agency"]["evidence"]["quote"], "分别引用主角的行动和它已经造成的结果。")
-    if n == 1:
-        end = a.han_count(text[:text.index(payoff) + len(payoff)])
-        a.require(end <= state["config"]["opening_core_max_han"], "首章须在开篇检查线内出现与卖点直接相连的实质结果。")
-    if n == 3:
-        arc = story.get("opening_arc")
-        a.require(isinstance(arc, dict) and all(nonempty(arc.get(k)) for k in ("answered_question", "earned_result", "next_question")),
-                  "第三章采用前须通读前三章，记录开篇问题的实际答案和下一问。")
-        pins = arc.get("evidence")
-        a.require(isinstance(pins, list) and all(isinstance(item, dict) for item in pins)
-                  and [item.get("chapter") for item in pins] == [1, 2, 3],
-                  "前三章结论须逐章给出当前版本的正文依据。")
-        evidence_list(root, state, text, n, pins, a, current_only=False)
 
 
 def validate(root, state, text, record, review, a):
@@ -376,6 +284,4 @@ def validate(root, state, text, record, review, a):
     for actual, item in zip(found, expected):
         a.require(isinstance(actual, dict) and all(actual.get(k) == v for k, v in item.items()), "制作语言扫描位置或文本不符。")
         a.require(actual.get("decision") == "story_context" and nonempty(actual.get("reason")), "疑似制作语言仍未处理：修正文后重查；确为故事内容时说明语境。")
-    if state["config"].get("story_review_required"):
-        validate_story_review(root, state, text, n, review, a)
     return review

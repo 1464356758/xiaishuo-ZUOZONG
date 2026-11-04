@@ -6,13 +6,7 @@
       "title": "暂定书名",
       "genre": "题材与读者",
       "pitch": "一句话卖点与人物矛盾",
-      "reader_promise": "读者期待",
-      "opening_arc": {
-        "first_effect": "首章的主角行动和实际结果",
-        "countermove": "第二章由结果引发的反击或代价",
-        "payoff": "第三章解决的短期问题及下一问",
-        "distinctive_engine": "与同类样本的差异及样本覆盖限制"
-      },
+      "reader_promise": "读者期待，以及前三章的行动结果、反击或代价、短期问题的答案",
       "long_form_engine": "约90万字的展开动力",
       "stage_variation": "各阶段的实质变化",
       "ending_direction": "结局方向",

@@ -16,13 +16,10 @@ SOURCE = Path(__file__).resolve().parents[1]
 
 
 class QualityFixture(WorkspaceFixture):
-    config_overrides = {}
-
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name) / "book"
-        ns.init(self.root, "合成机制测试书", {"strict_length": False, "serial_mode": True,
-                "narrative_review_required": True, **self.config_overrides})
+        ns.init(self.root, "合成机制测试书", {"strict_length": False, "serial_mode": True, "narrative_review_required": True})
         self.q = ns.narrative_module(); self.a = ns.serial_api(); self.serial = ns.serial_module()
         for kind, content in (("canon", "CANON_SECRET：未来答案只在作者资料里。"), ("roadmap", "ROADMAP_SECRET：未写出的未来计划。")):
             file = Path(self.temp.name) / (kind + ".md"); file.write_text(content, encoding="utf-8")
@@ -86,80 +83,6 @@ class QualityFixture(WorkspaceFixture):
         path, recpath, _, report = self.prepare(n, text, record)
         self.gate(path, recpath, report)
         return ns.adopt(self.root, path, recpath)
-
-
-class StoryReviewTests(QualityFixture):
-    config_overrides = {"story_review_required": True, "opening_chapter_han_max": 4500}
-
-    def register_brief(self, changes=None):
-        options = {}
-        if not ns.load_state(self.root)["chapters"]:
-            options["opening_trial"] = {
-                "options": [
-                    {"text": TEXT, "reader_question": "甲为什么交钥匙", "weak_point": "动机待补"},
-                    {"text": "乙从门外看着那把钥匙。", "reader_question": "谁会开门", "weak_point": "行动较晚"},
-                ],
-                "selected": 1,
-                "reason": "第一份小样较早出现选择。",
-            }
-        return super().register_brief({
-            "story_plan": {"goal": "需要有人守门", "choice": "交出唯一钥匙",
-                           "payoff": "乙选择承担守门", "next_pressure": "甲失去开门手段"},
-            "scene_plan": [{"purpose": "交接钥匙", "target_han": 3000}],
-            **options,
-            **(changes or {}),
-        })
-
-    def prepare(self, n, text=TEXT, record=None):
-        path, recpath, record, report = super().prepare(n, text, record)
-        story = report["narrative_review"]["story_review"]
-        for key, check in story["checks"].items():
-            quote = "甲把钥匙交给乙。" if key == "agency" else "乙决定独自守门。"
-            check.update(decision="pass", conclusion="合成判定，仅用于检查冻结边界")
-            check["evidence"]["quote"] = quote
-        story["payoff_change"].update(before="无人愿意守门", after="乙承担守门",
-                                      relation_to_promise="合成的处境变化")
-        if n == 3:
-            arc = story["opening_arc"]
-            arc.update(answered_question="谁承担守门", earned_result="乙守门", next_question="甲如何应对")
-            for pin in arc["evidence"]:
-                pin["quote"] = "乙决定独自守门。"
-        return path, recpath, record, report
-
-    def test_opening_trial_is_required_and_writer_sees_only_selected_sample(self):
-        with self.assertRaisesRegex(ns.WorkspaceError, "开场小样"):
-            self.register_brief({"opening_trial": None})
-        self.register_brief()
-        writer = ns.context(self.root, profile="writer")
-        self.assertIn(TEXT, writer)
-        self.assertNotIn("乙从门外看着那把钥匙。", writer)
-
-    def test_structural_revision_blocks_freeze(self):
-        path, recpath, _, report = self.prepare(1)
-        report["narrative_review"]["story_review"]["checks"]["payoff"]["decision"] = "revise"
-        with self.assertRaisesRegex(ns.WorkspaceError, "核心结果"):
-            self.gate(path, recpath, report)
-        with self.assertRaises(ns.WorkspaceError):
-            ns.adopt(self.root, path, recpath)
-        self.assertEqual(ns.load_state(self.root)["chapters"], {})
-
-    def test_late_result_is_rejected_even_with_early_hook(self):
-        text = "甲把钥匙交给乙。" + "门" * 3000 + "乙决定独自守门。"
-        path, recpath, _, report = self.prepare(1, text)
-        with self.assertRaisesRegex(ns.WorkspaceError, "开篇检查线"):
-            self.gate(path, recpath, report)
-
-    def test_third_chapter_needs_all_three_bound_sources(self):
-        self.release(1)
-        self.release(2)
-        path, recpath, _, report = self.prepare(3)
-        invalid = copy.deepcopy(report)
-        invalid["narrative_review"]["story_review"]["opening_arc"]["evidence"][0]["sha256"] = "0" * 64
-        with self.assertRaisesRegex(ns.WorkspaceError, "叙事证据已过期"):
-            self.gate(path, recpath, invalid)
-        self.gate(path, recpath, report)
-        ns.adopt(self.root, path, recpath)
-        self.assertEqual(set(ns.load_state(self.root)["serialization"]["frozen"]), {"1", "2", "3"})
 
 
 class NarrativeQualityTests(QualityFixture):

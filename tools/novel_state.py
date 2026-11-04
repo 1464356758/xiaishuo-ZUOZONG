@@ -27,7 +27,7 @@ class WorkspaceError(ValueError):
 
 _SERIAL_MODULE = None
 _NARRATIVE_MODULE = None
-SYSTEM_VERSION = "4.4-opening"
+SYSTEM_VERSION = "4.4.1-opening"
 
 
 def narrative_module():
@@ -185,9 +185,6 @@ def init(root, title, overrides=None):
         require(not config["narrative_review_required"] or config["serial_mode"] is True, "叙事检查须与连载冻结一起启用。旧工程保持原检查，不静默追认。")
         opening_max = config.get("opening_chapter_han_max")
         require(opening_max is None or (type(opening_max) is int and opening_max > 0), "开篇章长上限须为正整数。")
-        story_review = config.get("story_review_required", False)
-        require(type(story_review) is bool and (not story_review or config["narrative_review_required"]),
-                "剧情审读须与叙事检查一起启用。")
         state = {"schema_version": 2, "book_id": str(uuid.uuid4()), "title": title,
                  "revision": 0, "config": config, "chapters": {},
                  "checkpoints": [], "needs_revalidation": [], "inputs": {},

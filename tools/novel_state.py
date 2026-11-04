@@ -27,7 +27,7 @@ class WorkspaceError(ValueError):
 
 _SERIAL_MODULE = None
 _NARRATIVE_MODULE = None
-SYSTEM_VERSION = "4.4.1-opening"
+SYSTEM_VERSION = "4.4.2-opening"
 
 
 def narrative_module():
@@ -60,13 +60,28 @@ def require(condition, message):
         raise WorkspaceError(message)
 
 
-def chapter_han_range(config, chapter):
+def chapter_han_range(state, chapter):
+    config = state["config"]
     opening_max = config.get("opening_chapter_han_max")
     if opening_max is not None and chapter <= 3:
-        return 1, opening_max
-    if config["strict_length"]:
-        return config["chapter_han_min"], config["chapter_han_max"]
-    return None
+        minimum, maximum = 1, opening_max
+    elif config["strict_length"]:
+        minimum, maximum = config["chapter_han_min"], config["chapter_han_max"]
+    else:
+        return None
+    # 冻结下一章前，保留按现行章长完成全书的空间。
+    chapters = state["chapters"]
+    target = config["target_chapters"]
+    if config["strict_length"] and config.get("serial_mode") and chapter == len(chapters) + 1 <= target:
+        opening_left = max(0, min(3, target) - chapter) if opening_max is not None else 0
+        regular_left = target - chapter - opening_left
+        adopted = sum(item["han_count"] for item in chapters.values())
+        tail_min = opening_left + regular_left * config["chapter_han_min"]
+        tail_max = opening_left * (opening_max or 0) + regular_left * config["chapter_han_max"]
+        minimum = max(minimum, config["book_han_min"] - adopted - tail_max)
+        maximum = min(maximum, config["book_han_max"] - adopted - tail_min)
+        require(minimum <= maximum, "已采用字数与剩余章长无法达到全书范围，请核对字数配置。")
+    return minimum, maximum
 
 
 def digest(text):
@@ -191,6 +206,7 @@ def init(root, title, overrides=None):
                  "input_history": [], "tasks": {}, "completion": None}
         if config["serial_mode"]:
             state["serialization"] = serial_module().new_state(config, serial_api())
+        chapter_han_range(state, 1)
         atomic_json(Path(root) / "state.json", state)
         return state
 
@@ -394,8 +410,7 @@ def validate_record(root, state, text, record):
         require(bool(event.get("id", "").strip()) and bool(event.get("description", "").strip()), "伏笔事件缺少编号或说明。")
         require(quote_exists(text, event.get("quote")), "伏笔事件的引文不在当前正文内。")
     count = han_count(text)
-    config = state["config"]
-    limits = chapter_han_range(config, chapter)
+    limits = chapter_han_range(state, chapter)
     if limits is not None:
         require(limits[0] <= count <= limits[1], f"第{chapter}章实测{count}汉字，不在{limits[0]}—{limits[1]}范围。")
     return count

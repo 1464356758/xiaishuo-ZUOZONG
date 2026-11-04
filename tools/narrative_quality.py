@@ -102,8 +102,17 @@ def brief_skeleton(state, a):
     bindings = brief_bindings(state, a)
     config = state["config"]
     budget = config["chapter_han_min"]
-    if bindings["chapter"] <= 3 and config.get("opening_chapter_han_max") is not None:
-        budget = min(3500, config["opening_chapter_han_max"])
+    chapter = bindings["chapter"]
+    if config.get("opening_chapter_han_max") is not None:
+        if chapter <= 3:
+            budget = 3500
+        elif config["strict_length"]:
+            remaining = config["target_chapters"] - chapter + 1
+            adopted = sum(item["han_count"] for item in state["chapters"].values())
+            budget = (config["target_han"] - adopted + remaining - 1) // remaining
+    limits = a.chapter_han_range(state, chapter)
+    if limits is not None:
+        budget = max(limits[0], min(budget, limits[1]))
     return dict(bindings, decision="pending", writer_brief="",
                 hard_boundaries=[""], reader_promise="", history_queries=[""],
                 scene_plan=[{"purpose": "", "target_han": budget}])
@@ -119,10 +128,10 @@ def validate_brief(state, brief, a):
     a.require(isinstance(scenes, list) and scenes, "先安排有作用的场景，再写长章。")
     for scene in scenes:
         a.require(isinstance(scene, dict) and nonempty(scene.get("purpose")) and type(scene.get("target_han")) is int and scene["target_han"] > 0, "场景须有具体作用与正整数汉字预算。")
-    limits = a.chapter_han_range(state["config"], brief["chapter"])
+    limits = a.chapter_han_range(state, brief["chapter"])
     if limits is not None:
         total = sum(x["target_han"] for x in scenes)
-        a.require(limits[0] <= total <= limits[1], "场景预算合计与本章长度配置不符。")
+        a.require(limits[0] <= total <= limits[1], f"场景预算合计{total}汉字，不在本章{limits[0]}—{limits[1]}范围。")
     queries = brief.get("history_queries")
     a.require(isinstance(queries, list) and (not state["chapters"] or queries) and all(query_terms(x) for x in queries), "非首章须准备有效历史检索词，不能只填标点；首章可留空列表。")
     prose = "\n".join([brief["writer_brief"], brief["reader_promise"], *boundaries, *[x["purpose"] for x in scenes]])

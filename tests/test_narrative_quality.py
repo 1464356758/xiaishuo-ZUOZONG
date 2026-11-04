@@ -86,6 +86,24 @@ class QualityFixture(WorkspaceFixture):
 
 
 class NarrativeQualityTests(QualityFixture):
+    def test_opening_budget_leaves_enough_words_for_frozen_book(self):
+        state = ns.load_state(self.root)
+        state["config"].update(strict_length=True, opening_chapter_han_max=4500,
+                               target_chapters=4, book_han_min=22000, book_han_max=23500)
+        ns.atomic_json(self.root / "state.json", state)
+        for count in (2999, 3000):
+            text = TEXT + "门" * (count - ns.han_count(TEXT))
+            record = self.record(1, text)
+            plan = {"scene_plan": [{"purpose": "合成场景", "target_han": count}]}
+            if count == 2999:
+                with self.assertRaisesRegex(ns.WorkspaceError, "3000—4500"):
+                    self.register_brief(plan)
+                with self.assertRaisesRegex(ns.WorkspaceError, "3000—4500"):
+                    ns.validate_record(self.root, state, text, record)
+            else:
+                self.register_brief(plan)
+                self.assertEqual(ns.validate_record(self.root, state, text, record), 3000)
+
     def test_new_release_cannot_skip_brief_or_pending_review(self):
         record = self.record(1, TEXT); path = Path(self.temp.name) / "draft.txt"; path.write_text(TEXT, encoding="utf-8")
         ns.candidate(self.root, 1, path)

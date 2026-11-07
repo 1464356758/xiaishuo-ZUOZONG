@@ -136,14 +136,42 @@ def validate_brief(state, brief, a):
     a.require(isinstance(queries, list) and (not state["chapters"] or queries) and all(query_terms(x) for x in queries), "非首章须准备有效历史检索词，不能只填标点；首章可留空列表。")
     prose = "\n".join([brief["writer_brief"], brief["reader_promise"], *boundaries, *[x["purpose"] for x in scenes]])
     a.require(not surface_scan(prose), "干净任务书含制作字段、审稿标签或制作句；控制信息留在任务书元数据。")
+    if "references" in brief:
+        references = brief["references"]
+        a.require(isinstance(references, dict), "参考教材须包含摘要、版本和本书用法。")
+        packet = a.validate_reference_packet(references.get("packet"))
+        a.require(references.get("packet_sha256") == a.digest(encoded(packet)), "参考教材摘要版本不符。")
+        a.require(all(nonempty(references.get(key)) for key in ("application", "originality")), "写明本章怎样运用教材，以及人物、办法和代价的原创安排。")
+        a.require(not surface_scan(references["application"] + references["originality"]), "教材用法含制作字段，请用自然语言描述本书场景。")
     return brief
 
 
-def request_brief(root, out, a):
+def library_binding(root, brief, a):
+    path = Path(root).resolve().parent / "project_config.json"
+    config = a.read_json(path) if path.exists() else {}
+    binding = config.get("reference_library", {})
+    a.require(isinstance(binding, dict), "project_config.reference_library须为对象。")
+    repository = binding.get("repository_url", "")
+    a.require(isinstance(repository, str), "参考库仓库地址须为字符串。")
+    repository = repository.rstrip("/")
+    if repository:
+        references = brief.get("references", {})
+        packet = references.get("packet", {})
+        a.require(packet.get("origin", {}).get("repository_url") == repository,
+                  "本书已绑定参考库，先查阅教材并使用brief-request --references生成本章任务书。")
+
+
+def request_brief(root, out, a, references=None):
     state = a.load_state(root); a.verify_files(root, state)
     target = Path(out).resolve()
     a.require(not target.exists() and not target.is_relative_to(Path(root).resolve()), "任务书草稿用作品目录外的新路径，不能覆盖已有资料。")
-    a.atomic_json(target, brief_skeleton(state, a))
+    brief = brief_skeleton(state, a)
+    if references is not None:
+        packet = a.validate_reference_packet(a.read_json(references))
+        brief["references"] = {"packet": packet, "packet_sha256": a.digest(encoded(packet)),
+                               "application": "", "originality": ""}
+    library_binding(root, brief, a)
+    a.atomic_json(target, brief)
     return {"path": str(target), "decision": "pending", "note": "GPT读真实来源后填写；模板不算完成。"}
 
 
@@ -151,6 +179,7 @@ def check_brief(root, path, a):
     with a.writer_lock(root):
         state = a.load_state(root); a.verify_files(root, state)
         brief = validate_brief(state, a.read_json(path), a)
+        library_binding(root, brief, a)
         body = json.dumps(brief, ensure_ascii=False, indent=2) + "\n"; sha = a.digest(body)
         relative = f"briefs/CH{brief['chapter']:03d}_{sha}.json"
         a.immutable_text(a.inside(root, relative), body)
@@ -165,7 +194,9 @@ def current_brief(root, state, a):
     a.require(isinstance(pin, dict), "先brief-request、实际填写并brief-check，再生成写作资料或发布前检查。")
     body = a.inside(root, pin["path"]).read_text(encoding="utf-8")
     a.require(a.digest(body) == pin["sha256"], "已登记写作任务书被改写。")
-    return validate_brief(state, json.loads(body), a), pin["sha256"]
+    brief = validate_brief(state, json.loads(body), a)
+    library_binding(root, brief, a)
+    return brief, pin["sha256"]
 
 
 def writer_packet(root, state, a):
@@ -174,6 +205,10 @@ def writer_packet(root, state, a):
              "## 本章读者体验", brief["reader_promise"], "## 场景安排"]
     for i, scene in enumerate(brief["scene_plan"], 1):
         parts.append(f"{i}. {scene['purpose']}（约{scene['target_han']}汉字，按叙事需要调整）")
+    if "references" in brief:
+        references = brief["references"]
+        parts += ["## 本章采用的写法", references["application"],
+                  "## 本书的原创安排", references["originality"]]
     if state["chapters"]:
         item = state["chapters"][str(len(state["chapters"]))]
         parts += ["## 上一章正式正文", a.inside(root, item["text_path"]).read_text(encoding="utf-8")]

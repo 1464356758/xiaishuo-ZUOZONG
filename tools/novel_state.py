@@ -27,7 +27,7 @@ class WorkspaceError(ValueError):
 
 _SERIAL_MODULE = None
 _NARRATIVE_MODULE = None
-SYSTEM_VERSION = "4.4.2-opening"
+SYSTEM_VERSION = "4.5-reference"
 
 
 def narrative_module():
@@ -51,13 +51,35 @@ def serial_module():
 def serial_api():
     names = ("require", "digest", "han_count", "read_json", "atomic_json", "immutable_text", "inside",
              "load_state", "verify_files", "writer_lock", "validate_record", "records", "quote_exists", "review_status", "narrative_module",
-             "chapter_han_range")
+             "chapter_han_range", "validate_reference_packet")
     return SimpleNamespace(**{name: globals()[name] for name in names})
 
 
 def require(condition, message):
     if not condition:
         raise WorkspaceError(message)
+
+
+def validate_reference_packet(packet):
+    require(isinstance(packet, dict) and packet.get("format") == "novel-reference-packet-v1", "教材摘要格式不符。")
+    require(set(packet) == {"format", "library_id", "library_revision", "origin", "question", "lessons"}, "教材摘要字段不符，请从已完成教材重新export。")
+    require(all(isinstance(packet.get(key), str) and packet[key].strip() for key in ("library_id", "question")), "教材须有库身份与当前写作问题。")
+    require(type(packet.get("library_revision")) is int and packet["library_revision"] >= 0, "教材库版本无效。")
+    origin = packet.get("origin")
+    require(isinstance(origin, dict) and set(origin) == {"repository_url", "commit"} and all(isinstance(origin[key], str) for key in origin), "教材摘要缺少来源仓库与版本字段。")
+    require(bool(origin["repository_url"]) == bool(origin["commit"]), "线上教材须同时提供来源仓库与提交。")
+    if origin["repository_url"]:
+        require(re.fullmatch(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", origin["repository_url"]) is not None and re.fullmatch(r"[0-9a-f]{40}", origin["commit"]) is not None, "线上教材须绑定GitHub仓库和40位提交版本。")
+    lessons = packet.get("lessons")
+    require(isinstance(lessons, list) and lessons, "教材摘要须包含已完成的学习结论。")
+    for item in lessons:
+        fields = {"kind", "id", "sha256", "lesson", "applicability", "failure_conditions", "book_id", "source_sha256", "feedback_origin"}
+        require(isinstance(item, dict) and set(item) == fields, "教材摘要含额外或缺失字段，请重新导出学习结论。")
+        require(all(isinstance(item[key], str) and item[key].strip() for key in fields), "教材摘要字段须有实际内容。")
+        require(item["feedback_origin"] in ("model", "author", "reader", "editor"), "教材须保留实际反馈来源。")
+        require(item["kind"] in ("study", "review"), "教材记录类型无效。")
+        require(all(re.fullmatch(r"[0-9a-f]{64}", item[key]) for key in ("sha256", "source_sha256")), "教材来源哈希无效。")
+    return packet
 
 
 def chapter_han_range(state, chapter):
@@ -667,10 +689,10 @@ def snapshot(root, out):
         # 快照同时携带本工具和关键规程，恢复不依赖原临时目录。
         package = Path(__file__).resolve().parents[1]
         files["SYSTEM/tools/novel_state.py"] = Path(__file__).read_bytes()
-        for name in ("启动指令.txt", "启动新书.txt", "每日一章指令.txt", "docs/连载冻结与发布前检查.md", "docs/写作与叙事检查.md", "docs/专项技法.md", "平台研究与选题.md", "platforms.json", "执行规程.md", "工具使用与数据格式.md", "system_config.json", "project_config.json"):
+        for name in ("启动指令.txt", "启动新书.txt", "启动小说库.txt", "每日一章指令.txt", "docs/连载冻结与发布前检查.md", "docs/写作与叙事检查.md", "docs/专项技法.md", "docs/小说参考库.md", "平台研究与选题.md", "platforms.json", "执行规程.md", "工具使用与数据格式.md", "system_config.json", "project_config.json"):
             path = package / name
             if path.is_file(): files["SYSTEM/" + name] = path.read_bytes()
-        for name in ("online_state.py", "make_init_package.py", "serial_release.py", "narrative_quality.py", "daily_update.py", "check_updates.mjs"):
+        for name in ("online_state.py", "make_init_package.py", "serial_release.py", "narrative_quality.py", "novel_library.py", "daily_update.py", "check_updates.mjs"):
             path = package / "tools" / name
             if path.is_file(): files["SYSTEM/tools/" + name] = path.read_bytes()
         for name in ("core.mjs", "hub-core.mjs"):
@@ -710,7 +732,7 @@ def main():
     p.add_argument("--time", type=int)
     p.add_argument("--profile", choices=("author", "writer", "reader"), default="author")
     p.add_argument("--text"); p.add_argument("--history-from", type=int); p.add_argument("--history-to", type=int)
-    p = subs.add_parser("brief-request"); p.add_argument("--out", required=True)
+    p = subs.add_parser("brief-request"); p.add_argument("--out", required=True); p.add_argument("--references")
     p = subs.add_parser("brief-check"); p.add_argument("--file", required=True)
     p = subs.add_parser("history-search"); p.add_argument("--query", required=True); p.add_argument("--limit", type=int, default=5); p.add_argument("--before", type=int)
     p = subs.add_parser("set-input"); p.add_argument("--kind", choices=("canon", "roadmap"), required=True); p.add_argument("--file", required=True); p.add_argument("--reason", required=True); p.add_argument("--base-revision", type=int, required=True)
@@ -780,7 +802,7 @@ def main():
         elif args.command == "serial-plan":
             result = serial_module().plan(args.root, args.report, serial_api())
         elif args.command == "brief-request":
-            result = narrative_module().request_brief(args.root, args.out, serial_api())
+            result = narrative_module().request_brief(args.root, args.out, serial_api(), args.references)
         elif args.command == "brief-check":
             result = narrative_module().check_brief(args.root, args.file, serial_api())
         elif args.command == "history-search":

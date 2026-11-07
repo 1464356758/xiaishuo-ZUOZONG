@@ -1,5 +1,5 @@
 {
-  "system_version": "4.4.2-opening",
+  "system_version": "4.5-reference",
   "project_name": "小说系统最终母版",
   "book_root": "book",
   "authority": {
@@ -27,5 +27,9 @@
     "requires_reader_key": false
   },
   "management_url": "https://novel-workspace-v44.qq1464356758.chatgpt.site/",
-  "workspace_version": "1.4.6"
+  "workspace_version": "1.4.6",
+  "reference_library": {
+    "repository_url": "",
+    "branch": "main"
+  }
 }

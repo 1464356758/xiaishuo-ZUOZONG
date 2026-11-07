@@ -17,6 +17,8 @@ def build(root=ROOT,out=None):
     files['docs/个人端任务指令.md']=(root/'docs/个人端任务指令.md').read_bytes()
     files['docs/旧章只读核验.md']=(root/'docs/旧章只读核验.md').read_bytes()
     files['docs/定时执行器.md']=(root/'docs/定时执行器.md').read_bytes()
+    files['docs/小说参考库.md']=(root/'docs/小说参考库.md').read_bytes()
+    files['启动小说库.txt']=(root/'启动小说库.txt').read_bytes()
     for name in ('开篇试写与剧情验收.md', 'AI网文工作流调研.md'):
         files['docs/' + name] = (root / 'docs' / name).read_bytes()
     # Historical verification describes the original author's enrollment, not
@@ -46,8 +48,9 @@ def build(root=ROOT,out=None):
     config['project_name']='新小说项目';config['authority']={'mode':'github','repository_url':'','branch':'main'}
     config['writing']['platform']=None;config['writing']['genre']=None
     config['storage']={'mode':'plain_files','requires_reader_key':False}
+    config['reference_library']={'repository_url':'','branch':'main'}
     files['project_config.json']=(json.dumps(config,ensure_ascii=False,indent=2)+'\n').encode()
-    files['README.md']='''# 新小说初始化母版 V4.4.2\n\n本包是空系统，没有上一部小说的身份、进度、正文或选题。\n\n1. 将包内文件复制到新GitHub仓库根目录。\n2. 把新仓库链接与《启动新书.txt》发送给具备GitHub读写和代码执行能力的GPT。\n3. 先选择平台，再核查规则、榜单和5—10个原创选题，等作者选择。\n4. 获得写作授权后比较两种短开场，再写首章。前三章建议2500—3500汉字，默认上限4500。\n   采用前检查主线、人物选择、实际结果和续读理由。详见docs/开篇试写与剧情验收.md。\n5. 之后使用《每日一章指令.txt》，一次只完成一章；到期全文回看在冻结前，发布回执单独登记。\n6. 网页读取正式进度；个人端可授权保存检查清单。定时任务须在GPT实际建立，不自动投稿。\n\n已有作品先核对实际状态，不用本包覆盖。升级代码不自动追认旧章通过新检查，也不解冻旧章。\n'''.encode()
+    files['README.md']='''# 新小说初始化母版 V4.5\n\n本包是空系统，没有上一部小说的身份、进度、正文或选题。\n\n1. 将包内文件复制到新GitHub仓库根目录。\n2. 把新仓库链接与《启动新书.txt》发送给具备GitHub读写和代码执行能力的GPT。\n3. 先选择平台，再核查规则、榜单和5—10个原创选题，等作者选择。\n4. 提供小说参考库后，按docs/小说参考库.md绑定来源，查整书和阶段教材规划原创故事。每章任务书登记教材版本、本书用法与原创安排。\n5. 获得写作授权后比较两种短开场，再写首章。前三章建议2500—3500汉字，默认上限4500。采用前检查实际故事结果，详见docs/开篇试写与剧情验收.md。\n6. 之后使用《每日一章指令.txt》，一次完成一章；到期全文回看在冻结前，发布回执单独登记。\n7. 网页读取正式进度；个人端可授权保存检查清单。定时任务须在GPT实际建立。\n\n小说参考库使用独立的《小说参考库初始化包.zip》，先读《启动小说库.txt》。已有作品按实际状态接管。\n'''.encode()
     files['book/README.md']='# 空工作区\n\n由GPT运行bootstrap生成这本书的新身份。正文与记录直接保存，无需阅读密钥。不要复制旧书state.json。\n'.encode()
     files['research/README.md']='# 尚未研究\n\n选定平台后重新核查官方规则和榜单。\n'.encode()
     empty={'schema_version':1,'system_version':config['system_version'],'initialized':False,'book':{'id':None,'title':'新小说（待初始化）','platform':None,'selected_topic_id':None},'source':{'repository_url':None,'branch':'main','generated_at':None,'state_revision':0,'workflow_revision':0},'progress':{'target_chapters':100,'adopted_chapters':0,'target_han':900000,'actual_han':0,'completed':False,'needs_revalidation':[]},'task':{'phase':'NOT_INITIALIZED','label':'等待初始化','chapter':1,'detail':'复制启动指令交给GPT，建立这本书的新身份。','next_action':'读取启动新书.txt，填入新仓库链接后bootstrap。','updated_at':None},'chapters':[],'topics':[],'research':None,'history':[]}
@@ -68,5 +71,34 @@ def build(root=ROOT,out=None):
         for name,sha in manifest['files'].items():assert hashlib.sha256(archive.read(name)).hexdigest()==sha
     return {'path':str(out),'files':len(files),'contains_novel_data':False,'bytes':out.stat().st_size}
 
+
+def build_library(root=ROOT, out=None):
+    root = Path(root).resolve()
+    out = Path(out or root / '小说参考库初始化包.zip').resolve()
+    files = {
+        'AGENTS.md': (root / 'templates/参考库指令.md').read_bytes(),
+        'README.md': (root / 'docs/小说参考库.md').read_bytes(),
+        '启动小说库.txt': (root / '启动小说库.txt').read_bytes(),
+        '.gitignore': (root / '.gitignore').read_bytes(),
+        'incoming/.gitkeep': b'',
+        'tools/novel_library.py': (root / 'tools/novel_library.py').read_bytes(),
+        'tools/novel_state.py': (root / 'tools/novel_state.py').read_bytes(),
+    }
+    manifest = {'format': 'novel-reference-library-init-v1', 'contains_novel_data': False,
+                'files': {name: hashlib.sha256(body).hexdigest() for name, body in files.items()}}
+    files['LIBRARY_INIT_MANIFEST.json'] = (json.dumps(manifest, ensure_ascii=False, indent=2) + '\n').encode()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as archive:
+        for name, body in sorted(files.items()):
+            entry = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            entry.compress_type = zipfile.ZIP_DEFLATED
+            entry.external_attr = 0o100644 << 16
+            archive.writestr(entry, body)
+    with zipfile.ZipFile(out) as archive:
+        assert archive.testzip() is None
+        for name, sha in manifest['files'].items():
+            assert hashlib.sha256(archive.read(name)).hexdigest() == sha
+    return {'path': str(out), 'files': len(files), 'bytes': out.stat().st_size, 'contains_novel_data': False}
+
 if __name__=='__main__':
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--out');args=p.parse_args();print(json.dumps(build(out=args.out),ensure_ascii=False,indent=2))
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--out');p.add_argument('--library', action='store_true');args=p.parse_args();print(json.dumps((build_library if args.library else build)(out=args.out),ensure_ascii=False,indent=2))

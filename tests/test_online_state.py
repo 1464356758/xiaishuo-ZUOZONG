@@ -129,7 +129,7 @@ class OnlineTests(unittest.TestCase):
             self.assertTrue(state['config']['narrative_review_required'])
             self.assertEqual(online.ns.chapter_han_range(state, 1), (1, 4500))
             self.assertEqual(online.ns.chapter_han_range(state, 4), (8000, 10000))
-            self.assertEqual(json.loads((target/'project_config.json').read_text())['system_version'],'4.4.2-opening')
+            self.assertEqual(json.loads((target/'project_config.json').read_text())['system_version'],'4.5-reference')
             self.assertEqual(state['serialization']['frozen'],{})
             self.assertEqual(state['serialization']['published'],{})
             self.assertEqual(json.loads((target/'book/workflow.json').read_text())['phase'],'WAITING_PLATFORM')

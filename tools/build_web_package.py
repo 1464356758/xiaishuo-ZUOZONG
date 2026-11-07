@@ -41,7 +41,10 @@ def build(root=ROOT, out_dir=None):
     owner.update(common)
     initial = out / "初始化系统包.zip"
     initial_info = make_init_package.build(root, initial)
+    library = out / "小说参考库初始化包.zip"
+    library_info = make_init_package.build_library(root, library)
     owner["downloads/novel-init.zip"] = initial.read_bytes()
+    owner["downloads/novel-library-init.zip"] = library.read_bytes()
     owner["netlify/functions/github.mjs"] = (relay + '\nexport default request=>handleGitHubRelay(request);\n').encode()
     owner["部署说明.txt"] = (root / "docs/网页部署与首次使用.md").read_bytes()
     partner_names = ["reader.html", "reader.js", "reading-state.mjs", "search.mjs", "hub-core.mjs", "core.mjs", "github-transport.mjs", "query-model.mjs", "ui.mjs", "hub.css", "icon.svg"]
@@ -53,6 +56,7 @@ def build(root=ROOT, out_dir=None):
     manager = {"books.json": (root / "templates/管理清单.json").read_bytes(),
                "README.md": "# 小说更新管理仓库\n\n本包只有空清单，没有小说正文或凭证。上传到独立公开仓库并产生初始提交后，在个人端连接此仓库。小说清单与最近7天查询记录由个人端保存；查询无需预先生成报告。\n".encode()}
     return {"initial": initial_info,
+            "library": library_info,
             "owner": archive(out / "个人管理端部署包.zip", owner, "owner", version),
             "partner": archive(out / "代发端部署包.zip", partner, "partner", version),
             "management": archive(out / "管理仓库初始化包.zip", manager, "management", version)}
